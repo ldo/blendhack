@@ -83,21 +83,75 @@ def type_name(of_type) :
         result
 #end type_name
 
+def type_size(of_type) :
+    if type(of_type) == PointerType :
+        result = ptrsize
+    elif type(of_type) == FixedArrayType :
+        result = type_size(of_type.EltType) * of_type.NrElts
+    elif type(of_type) == MethodType :
+        result = ptrsize
+    else :
+        result = of_type["size"]
+    #end if
+    return \
+        result
+#end type_size
+
 primitive_types = \
     {
-        "char" : {"name" : "c", "size" : 1},
-        "uchar" : {"name" : "B", "size" : 1},
-        "short" : {"name" : "h", "size" : 2},
-        "ushort" : {"name" : "H", "size" : 2},
-        "int" : {"name" : "i", "size" : 4},
-        "long" : {"name" : "l", "size" : 4},
-        "ulong" : {"name" : "L", "size" : 4},
-        "float" : {"name" : "f", "size" : 4},
-        "double" : {"name" : "d", "size" : 8},
-        "int64_t" : {"name" : "q", "size" : 8},
-        "uint64_t" : {"name" : "Q", "size" : 8},
-        "void" : {"name" : None, "size" : 0},
+        "char" : {"code" : "c", "size" : 1},
+        "uchar" : {"code" : "B", "size" : 1},
+        "short" : {"code" : "h", "size" : 2},
+        "ushort" : {"code" : "H", "size" : 2},
+        "int" : {"code" : "i", "size" : 4},
+        "long" : {"code" : "l", "size" : 4},
+        "ulong" : {"code" : "L", "size" : 4},
+        "float" : {"code" : "f", "size" : 4},
+        "double" : {"code" : "d", "size" : 8},
+        "int64_t" : {"code" : "q", "size" : 8},
+        "uint64_t" : {"code" : "Q", "size" : 8},
+        "void" : {"size" : 0},
     }
+
+def decode_data(rawdata, datatype) :
+    if type(datatype) == PointerType :
+        assert len(rawdata) == ptrsize, "expecting pointer to be %d bytes, got %d" % (ptrsize, len(rawdata))
+        oldaddress = struct.unpack(endian + ptrcode, rawdata)[0]
+        if oldaddress in blocks_by_oldaddress :
+            result = blocks_by_oldaddress[oldaddress]
+        else :
+            result = None # ?
+        #end if
+    elif type(datatype) == FixedArrayType :
+        result = []
+        elt_size = type_size(datatype.EltType)
+        assert len(rawdata) == elt_size * datatype.NrElts
+        for i in range(0, datatype.NrElts) :
+            result.append(decode_data(rawdata[i * elt_size : (i + 1) * elt_size], datatype.EltType))
+        #end for
+    elif type(datatype) == MethodType :
+        result = None # ?
+    elif datatype["name"] in primitive_types :
+        assert len(rawdata) == primitive_types[datatype["name"]]["size"], "wrong size for primitive data of type %s, expected %d, got %d" % (datatype["name"], primitive_types[datatype["name"]]["size"], len(rawdata))
+        result = struct.unpack(endian + primitive_types[datatype["name"]]["code"], rawdata)[0]
+    else :
+        assert "fields" in datatype, "non-primitive type %s has no fields" % datatype["name"]
+        result = {}
+        for field in datatype["fields"] :
+            field_size = type_size(field["type"])
+            if len(rawdata) < field_size :
+                sys.stdout.write("# need at least %d bytes for %s.%s, only got %d\n" % (field_size, datatype["name"], field["name"], len(rawdata)))
+                rawdata = b"" # ignore rest
+                break
+            #end if
+            result[field["name"]] = decode_data(rawdata[:field_size], field["type"])
+            rawdata = rawdata[field_size:]
+        #end for
+        assert len(rawdata) == 0, "leftover data after decoding %s struct" % datatype["name"]
+    #end if
+    return \
+        result
+#end decode_data
 
 #+
 # Mainline
@@ -194,15 +248,13 @@ while True :
             sys.stdout.write("struct[%d] is %s\n" % (i, types_by_index[struct_type]["name"])) # debug
             sdna_data = sdna_data[4 * nr_fields:]
         #end for
-        types_by_name = {}
+        types = {}
         for t in types_by_index :
             assert (t["name"] in primitive_types) <= ("fields" not in t), "primitive type %s must not be struct" % t["name"]
-            if t["name"] in primitive_types :
-                types_by_name[t["name"]] = t
-            #end if
+            types[t["name"]] = t
         #end for
         for k in primitive_types :
-            assert primitive_types[k]["size"] == types_by_name[k]["size"], "wrong type size for primitive type %s, expected %d, got %d" % (k, primitive_types[k]["size"], types_by_name[k]["size"])
+            assert primitive_types[k]["size"] == types[k]["size"], "wrong type size for primitive type %s, expected %d, got %d" % (k, primitive_types[k]["size"], types[k]["size"])
         #end for
     elif blockcode == b"ENDB" :
         break
@@ -226,6 +278,9 @@ while True :
 fd.close()
 assert global_block != None, "missing GLOB block"
 for i, block in enumerate(blocks) :
-    sys.stdout.write("block %d(%s)[%s] : %s[%d]\n" % (i, repr(block["code"]), len(block["rawdata"]), structs[block["dna_index"]]["name"], block["dna_count"])) # debug
+    block_type = structs[block["dna_index"]]
+    sys.stdout.write("block %d(%s)[%s] : %s[%d]\n" % (i, repr(block["code"]), len(block["rawdata"]), block_type["name"], block["dna_count"])) # debug
+    for j in range(0, block["dna_count"]) :
+        sys.stdout.write(" => " + repr(decode_data(block["rawdata"][j * block_type["size"] : (j + 1) * block_type["size"]], block_type)) + "\n")
+    #end for
 #end for
-# more TBD
