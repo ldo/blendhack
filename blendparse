@@ -20,7 +20,7 @@ def structread(fromfile, decode_struct) :
 #end structread
 
 #+
-# Representation of more complex Blender types
+# Handling of Blender types
 #-
 
 class PointerType :
@@ -83,6 +83,22 @@ def type_name(of_type) :
         result
 #end type_name
 
+primitive_types = \
+    {
+        "char" : {"name" : "c", "size" : 1},
+        "uchar" : {"name" : "B", "size" : 1},
+        "short" : {"name" : "h", "size" : 2},
+        "ushort" : {"name" : "H", "size" : 2},
+        "int" : {"name" : "i", "size" : 4},
+        "long" : {"name" : "l", "size" : 4},
+        "ulong" : {"name" : "L", "size" : 4},
+        "float" : {"name" : "f", "size" : 4},
+        "double" : {"name" : "d", "size" : 8},
+        "int64_t" : {"name" : "q", "size" : 8},
+        "uint64_t" : {"name" : "Q", "size" : 8},
+        "void" : {"name" : None, "size" : 0},
+    }
+
 #+
 # Mainline
 #-
@@ -97,6 +113,8 @@ ptrsize = {b"_" : 4, b"-" : 8}[ptrcode]
 ptrcode = {b"_" : "L", b"-" : "Q"}[ptrcode]
 endian = {b"v" : "<", b"V" : ">"}[endiancode]
 blocks = []
+blocks_by_oldaddress = {}
+global_block = None
 while True :
     blockcode, datasize, oldaddr, dna_index, dna_count = \
         structread(fd, "%s4sI%sII" % (endian, ptrcode))
@@ -107,7 +125,7 @@ while True :
         assert sdna_id == b"SDNA", "invalid DNA block header"
         sdna_data = sdna_data[4:]
         names = []
-        types = []
+        types_by_index = []
         structs = []
         data_offset = 4
         for \
@@ -115,7 +133,7 @@ while True :
         in \
             (
                 (b"NAME", names),
-                (b"TYPE", types),
+                (b"TYPE", types_by_index),
             ) \
         :
             assert len(sdna_data) >= 8, "premature end of DNA block"
@@ -135,18 +153,18 @@ while True :
                 data_offset += 4 - data_offset % 4
             #end if
         #end for
-        for i in range(0, len(types)) :
-            types[i] = {"name" : types[i]}
+        for i in range(0, len(types_by_index)) :
+            types_by_index[i] = {"name" : types_by_index[i]}
         #end for
         assert sdna_data[:4] == b"TLEN", "expecting TLEN sub-block in DNA block"
         sdna_data = sdna_data[4:]
         data_offset += 4
-        for i, s in enumerate(struct.unpack(endian + "H" * len(types), sdna_data[:2 * len(types)])) :
-            types[i]["size"] = s
-            sys.stdout.write("sizeof(%s) = %d\n" % (types[i]["name"], types[i]["size"])) # debug
+        for i, s in enumerate(struct.unpack(endian + "H" * len(types_by_index), sdna_data[:2 * len(types_by_index)])) :
+            types_by_index[i]["size"] = s
+            sys.stdout.write("sizeof(%s) = %d\n" % (types_by_index[i]["name"], types_by_index[i]["size"])) # debug
         #end for
-        sdna_data = sdna_data[2 * len(types):]
-        data_offset += 2 * len(types)
+        sdna_data = sdna_data[2 * len(types_by_index):]
+        data_offset += 2 * len(types_by_index)
         if data_offset % 4 != 0 :
             sdna_data = sdna_data[4 - data_offset % 4:]
             data_offset += 4 - data_offset % 4
@@ -163,36 +181,51 @@ while True :
                 if j % 2 == 0 :
                     field_type = f
                 else :
-                    field_name, field_type = parse_field_type(names[f], types[field_type])
+                    field_name, field_type = parse_field_type(names[f], types_by_index[field_type])
                     fields.append({"type" : field_type, "name" : field_name})
-                    sys.stdout.write("%s.%s : %s\n" % (types[struct_type]["name"], field_name, type_name(field_type))) # debug
+                    sys.stdout.write("%s.%s : %s\n" % (types_by_index[struct_type]["name"], field_name, type_name(field_type))) # debug
                 #end if
             #end for
-            types[struct_type]["fields"] = fields
+            types_by_index[struct_type]["fields"] = fields
             if len(structs) < i + 1 :
                 structs.extend([None] * (i + 1 - len(structs)))
             #end if
-            structs[i] = types[struct_type]
-            sys.stdout.write("struct[%d] is %s\n" % (i, types[struct_type]["name"])) # debug
+            structs[i] = types_by_index[struct_type]
+            sys.stdout.write("struct[%d] is %s\n" % (i, types_by_index[struct_type]["name"])) # debug
             sdna_data = sdna_data[4 * nr_fields:]
+        #end for
+        types_by_name = {}
+        for t in types_by_index :
+            assert (t["name"] in primitive_types) <= ("fields" not in t), "primitive type %s must not be struct" % t["name"]
+            if t["name"] in primitive_types :
+                types_by_name[t["name"]] = t
+            #end if
+        #end for
+        for k in primitive_types :
+            assert primitive_types[k]["size"] == types_by_name[k]["size"], "wrong type size for primitive type %s, expected %d, got %d" % (k, primitive_types[k]["size"], types_by_name[k]["size"])
         #end for
     elif blockcode == b"ENDB" :
         break
     else :
-        blocks.append \
-          (
+        new_block = \
             {
                 "code" : blockcode,
                 "oldaddr" : oldaddr,
                 "dna_index" : dna_index,
                 "dna_count" : dna_count,
-                "data" : fd.read(datasize),
+                "rawdata" : fd.read(datasize),
             }
-          )
+        if blockcode == b"GLOB" :
+            assert global_block == None, "multiple GLOB blocks found"
+            global_block = new_block
+        #end if
+        blocks.append(new_block)
+        blocks_by_oldaddress[new_block["oldaddr"]] = new_block
     #end if
 #end while
 fd.close()
+assert global_block != None, "missing GLOB block"
 for i, block in enumerate(blocks) :
-    sys.stdout.write("block %d(%s)[%s] : %s[%d]\n" % (i, repr(block["code"]), len(block["data"]), structs[block["dna_index"]]["name"], block["dna_count"])) # debug
+    sys.stdout.write("block %d(%s)[%s] : %s[%d]\n" % (i, repr(block["code"]), len(block["rawdata"]), structs[block["dna_index"]]["name"], block["dna_count"])) # debug
 #end for
 # more TBD
