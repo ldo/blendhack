@@ -1,0 +1,46 @@
+#!/usr/bin/python3
+#+
+# Test of trying to parse the contents of .blend files.
+#
+# Created by Lawrence D'Oliveiro <ldo@geek-central.gen.nz>.
+#-
+
+import sys
+import os
+import struct
+
+#+
+# Useful stuff
+#-
+
+def structread(fromfile, decode_struct) :
+    """reads sufficient bytes from fromfile to be unpacked according to
+    decode_struct, and returns the unpacked results."""
+    return struct.unpack(decode_struct, fromfile.read(struct.calcsize(decode_struct)))
+#end structread
+
+#+
+# Mainline
+#-
+
+if len(sys.argv) != 2 :
+    raise RuntimeError("need one arg, the name of the .blend file to parse")
+#end if
+fd = open(sys.argv[1], "rb")
+sig, ptrcode, endiancode, version = structread(fd, "7s1s1s3s")
+assert sig == b"BLENDER", "unrecognized file header signature %s" % sig
+ptrsize = {b"_" : 4, b"-" : 8}[ptrcode]
+ptrcode = {b"_" : "L", b"-" : "Q"}[ptrcode]
+endian = {b"v" : "<", b"V" : ">"}[endiancode]
+blocks = []
+while True :
+    blockcode, datasize, oldaddr, dna_index, count = \
+        structread(fd, "%s4sI%sII" % (endian, ptrcode))
+    sys.stdout.write("blockcode = %s, datasize = %d, oldattr = %x, dna_index = %d, count = %d\n" % (blockcode, datasize, oldaddr, dna_index, count)) # debug
+    fd.seek(datasize, os.SEEK_CUR)
+    # more TBD
+    if blockcode == b"ENDB" :
+        break
+#end while
+# more TBD
+fd.close()
