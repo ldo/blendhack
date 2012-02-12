@@ -95,8 +95,8 @@ while True :
             struct_type, nr_fields = struct.unpack(endian + "HH", sdna_data[:4])
             sdna_data = sdna_data[4:]
             fields = []
-            for i, f in enumerate(struct.unpack(endian + "HH" * nr_fields, sdna_data[:4 * nr_fields])) :
-                if i % 2 == 0 :
+            for j, f in enumerate(struct.unpack(endian + "HH" * nr_fields, sdna_data[:4 * nr_fields])) :
+                if j % 2 == 0 :
                     field_type = f
                 else :
                     field_name = f
@@ -126,6 +126,6 @@ while True :
 #end while
 fd.close()
 for i, block in enumerate(blocks) :
-    sys.stdout.write("block %d(%s)[%s] : %s[%d]\n" % (i, repr(block["code"]), len(block["data"]), types[block["dna_index"]]["name"], block["dna_count"])) # debug
+    sys.stdout.write("block %d(%s)[%s] : %s[%d]\n" % (i, repr(block["code"]), len(block["data"]), structs[block["dna_index"]]["name"], block["dna_count"])) # debug
 #end for
 # more TBD
