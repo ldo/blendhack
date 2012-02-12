@@ -34,13 +34,88 @@ ptrcode = {b"_" : "L", b"-" : "Q"}[ptrcode]
 endian = {b"v" : "<", b"V" : ">"}[endiancode]
 blocks = []
 while True :
-    blockcode, datasize, oldaddr, dna_index, count = \
+    blockcode, datasize, oldaddr, dna_index, dna_count = \
         structread(fd, "%s4sI%sII" % (endian, ptrcode))
-    sys.stdout.write("blockcode = %s, datasize = %d, oldattr = %x, dna_index = %d, count = %d\n" % (blockcode, datasize, oldaddr, dna_index, count)) # debug
-    fd.seek(datasize, os.SEEK_CUR)
-    # more TBD
-    if blockcode == b"ENDB" :
+    sys.stdout.write("blockcode = %s, datasize = %d, oldattr = %x, dna_index = %d, dna_count = %d\n" % (blockcode, datasize, oldaddr, dna_index, dna_count)) # debug
+    if blockcode == b"DNA1" :
+        sdna_data = fd.read(datasize)
+        sdna_id = sdna_data[:4]
+        assert sdna_id == b"SDNA", "invalid DNA block header"
+        sdna_data = sdna_data[4:]
+        names = {}
+        types = {}
+        data_offset = 4
+        for \
+            expect_id, collect \
+        in \
+            (
+                (b"NAME", names),
+                (b"TYPE", types),
+            ) \
+        :
+            assert len(sdna_data) >= 8, "premature end of DNA block"
+            assert expect_id == sdna_data[:4], "expecting %s sub-block in DNA block" % expect_id
+            nr_names = struct.unpack(endian + "I", sdna_data[4:8])[0]
+            sdna_data = sdna_data[8:]
+            data_offset += 8
+            for i in range(0, nr_names) :
+                str_end = sdna_data.index(b"\0")
+                collect[i] = sdna_data[:str_end]
+                sys.stdout.write("name[%d] = %s\n" % (i, repr(collect[i]))) # debug
+                data_offset += str_end + 1
+                sdna_data = sdna_data[str_end + 1:]
+            #end for
+            if data_offset % 4 != 0 :
+                sdna_data = sdna_data[4 - data_offset % 4:]
+                data_offset += 4 - data_offset % 4
+            #end if
+        #end for
+        for k in types :
+            types[k] = {"name" : types[k]}
+        #end for
+        assert sdna_data[:4] == b"TLEN", "expecting TLEN sub-block in DNA block"
+        sdna_data = sdna_data[4:]
+        data_offset += 4
+        for i in range(0, len(types)) :
+            types[i]["size"] = struct.unpack(endian + "H", sdna_data[:2])[0]
+            sys.stdout.write("sizeof(%s) = %d\n" % (types[i]["name"], types[i]["size"])) # debug
+            sdna_data = sdna_data[2:]
+            data_offset += 2
+        #end for
+        if data_offset % 4 != 0 :
+            sdna_data = sdna_data[4 - data_offset % 4:]
+            data_offset += 4 - data_offset % 4
+        #end if
+        assert sdna_data[:4] == b"STRC", "expecting STRC sub-block in DNA block"
+        nr_structs = struct.unpack(endian + "I", sdna_data[4:8])[0]
+        sdna_data = sdna_data[8:]
+        data_offset += 8
+        for i in range(0, nr_structs) :
+            struct_type, nr_fields = struct.unpack(endian + "HH", sdna_data[:4])
+            sdna_data = sdna_data[4:]
+            fields = []
+            for j in range(0, nr_fields) :
+                field_type, field_name = struct.unpack(endian + "HH", sdna_data[:4])
+                sdna_data = sdna_data[4:]
+                fields.append({"type" : types[field_type], "name" : names[field_name]})
+                sys.stdout.write("%s.%s : %s\n" % (types[struct_type]["name"], names[field_name], types[field_type])) # debug
+            #end for
+            types[struct_type]["fields"] = fields
+        #end for
+    elif blockcode == b"ENDB" :
         break
+    else :
+        blocks.append \
+          (
+            {
+                "code" : blockcode,
+                "oldaddr" : oldaddr,
+                "dna_index" : dna_index,
+                "dna_count" : dna_count,
+                "data" : fd.read(datasize),
+            }
+          )
+    #end if
 #end while
-# more TBD
 fd.close()
+# more TBD
