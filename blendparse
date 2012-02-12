@@ -76,12 +76,12 @@ while True :
         assert sdna_data[:4] == b"TLEN", "expecting TLEN sub-block in DNA block"
         sdna_data = sdna_data[4:]
         data_offset += 4
-        for i in range(0, len(types)) :
-            types[i]["size"] = struct.unpack(endian + "H", sdna_data[:2])[0]
+        for i, s in enumerate(struct.unpack(endian + "H" * len(types), sdna_data[:2 * len(types)])) :
+            types[i]["size"] = s
             sys.stdout.write("sizeof(%s) = %d\n" % (types[i]["name"], types[i]["size"])) # debug
-            sdna_data = sdna_data[2:]
-            data_offset += 2
         #end for
+        sdna_data = sdna_data[2 * len(types):]
+        data_offset += 2 * len(types)
         if data_offset % 4 != 0 :
             sdna_data = sdna_data[4 - data_offset % 4:]
             data_offset += 4 - data_offset % 4
@@ -94,13 +94,17 @@ while True :
             struct_type, nr_fields = struct.unpack(endian + "HH", sdna_data[:4])
             sdna_data = sdna_data[4:]
             fields = []
-            for j in range(0, nr_fields) :
-                field_type, field_name = struct.unpack(endian + "HH", sdna_data[:4])
-                sdna_data = sdna_data[4:]
-                fields.append({"type" : types[field_type], "name" : names[field_name]})
-                sys.stdout.write("%s.%s : %s\n" % (types[struct_type]["name"], names[field_name], types[field_type])) # debug
+            for i, f in enumerate(struct.unpack(endian + "HH" * nr_fields, sdna_data[:4 * nr_fields])) :
+                if i % 2 == 0 :
+                    field_type = f
+                else :
+                    field_name = f
+                    fields.append({"type" : types[field_type], "name" : names[field_name]})
+                    sys.stdout.write("%s.%s : %s\n" % (types[struct_type]["name"], names[field_name], types[field_type])) # debug
+                #end if
             #end for
             types[struct_type]["fields"] = fields
+            sdna_data = sdna_data[4 * nr_fields:]
         #end for
     elif blockcode == b"ENDB" :
         break
