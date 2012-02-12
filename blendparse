@@ -44,6 +44,7 @@ while True :
         sdna_data = sdna_data[4:]
         names = {}
         types = {}
+        structs = {}
         data_offset = 4
         for \
             expect_id, collect \
@@ -104,6 +105,8 @@ while True :
                 #end if
             #end for
             types[struct_type]["fields"] = fields
+            structs[i] = types[struct_type]
+            sys.stdout.write("struct[%d] is %s\n" % (i, types[struct_type]["name"])) # debug
             sdna_data = sdna_data[4 * nr_fields:]
         #end for
     elif blockcode == b"ENDB" :
@@ -122,4 +125,7 @@ while True :
     #end if
 #end while
 fd.close()
+for i, block in enumerate(blocks) :
+    sys.stdout.write("block %d(%s)[%s] : %s[%d]\n" % (i, repr(block["code"]), len(block["data"]), types[block["dna_index"]]["name"], block["dna_count"])) # debug
+#end for
 # more TBD
