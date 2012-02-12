@@ -100,7 +100,7 @@ while True :
                 else :
                     field_name = f
                     fields.append({"type" : types[field_type], "name" : names[field_name]})
-                    sys.stdout.write("%s.%s : %s\n" % (types[struct_type]["name"], names[field_name], types[field_type])) # debug
+                    sys.stdout.write("%s.%s : %s\n" % (types[struct_type]["name"], names[field_name], types[field_type]["name"])) # debug
                 #end if
             #end for
             types[struct_type]["fields"] = fields
