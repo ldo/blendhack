@@ -42,9 +42,9 @@ while True :
         sdna_id = sdna_data[:4]
         assert sdna_id == b"SDNA", "invalid DNA block header"
         sdna_data = sdna_data[4:]
-        names = {}
-        types = {}
-        structs = {}
+        names = []
+        types = []
+        structs = []
         data_offset = 4
         for \
             expect_id, collect \
@@ -61,7 +61,7 @@ while True :
             data_offset += 8
             for i in range(0, nr_names) :
                 str_end = sdna_data.index(b"\0")
-                collect[i] = sdna_data[:str_end]
+                collect.append(sdna_data[:str_end])
                 sys.stdout.write("name[%d] = %s\n" % (i, repr(collect[i]))) # debug
                 data_offset += str_end + 1
                 sdna_data = sdna_data[str_end + 1:]
@@ -71,8 +71,8 @@ while True :
                 data_offset += 4 - data_offset % 4
             #end if
         #end for
-        for k in types :
-            types[k] = {"name" : types[k]}
+        for i in range(0, len(types)) :
+            types[i] = {"name" : types[i]}
         #end for
         assert sdna_data[:4] == b"TLEN", "expecting TLEN sub-block in DNA block"
         sdna_data = sdna_data[4:]
@@ -105,6 +105,9 @@ while True :
                 #end if
             #end for
             types[struct_type]["fields"] = fields
+            if len(structs) < i + 1 :
+                structs.extend([None] * (i + 1 - len(structs)))
+            #end if
             structs[i] = types[struct_type]
             sys.stdout.write("struct[%d] is %s\n" % (i, types[struct_type]["name"])) # debug
             sdna_data = sdna_data[4 * nr_fields:]
