@@ -20,6 +20,70 @@ def structread(fromfile, decode_struct) :
 #end structread
 
 #+
+# Representation of more complex Blender types
+#-
+
+class PointerType :
+    # represents a pointer
+
+    def __init__(self, EltType) :
+        self.EltType = EltType
+    #end __init__
+
+#end PointerType
+
+class FixedArrayType :
+    # represents a fixed-length array
+
+    def __init__(self, EltType, NrElts) :
+        self.EltType = EltType
+        self.NrElts = NrElts
+    #end __init__
+
+#end FixedArrayType :
+
+class MethodType :
+    # represents a pointer to a routine
+
+    def __init__(self, ResultType) :
+        self.ResultType = ResultType
+    #end __init__
+
+#end MethodType
+
+def parse_field_type(field_name, field_type) :
+    if field_name[0] == "*" :
+        field_name, field_type = parse_field_type(field_name[1:], PointerType(field_type))
+    elif field_name[:2] == "(*" and field_name[-3:] == ")()" :
+        field_name, field_type = parse_field_type(field_name[2:-3], MethodType(field_type))
+    else :
+        indexstart = field_name.rfind("[")
+        if indexstart >= 0 :
+            assert field_name[-1] == "]", "%s does not end with ]" % repr(field_name)
+            nr_elts = int(field_name[indexstart + 1 : -1])
+            field_name, field_type = parse_field_type(field_name[:indexstart], field_type)
+            field_type = FixedArrayType(field_type, nr_elts)
+        #end if
+    #end if
+    return \
+        field_name, field_type
+#end parse_field_type
+
+def type_name(of_type) :
+    if type(of_type) == PointerType :
+        result = type_name(of_type.EltType) + "*"
+    elif type(of_type) == FixedArrayType :
+        result = "%s[%d]" % (type_name(of_type.EltType), of_type.NrElts)
+    elif type(of_type) == MethodType :
+        result = "%s (*)()" % type_name(of_type.ResultType)
+    else :
+        result = of_type["name"]
+    #end if
+    return \
+        result
+#end type_name
+
+#+
 # Mainline
 #-
 
@@ -61,7 +125,7 @@ while True :
             data_offset += 8
             for i in range(0, nr_names) :
                 str_end = sdna_data.index(b"\0")
-                collect.append(sdna_data[:str_end])
+                collect.append(sdna_data[:str_end].decode("utf-8"))
                 sys.stdout.write("name[%d] = %s\n" % (i, repr(collect[i]))) # debug
                 data_offset += str_end + 1
                 sdna_data = sdna_data[str_end + 1:]
@@ -99,9 +163,9 @@ while True :
                 if j % 2 == 0 :
                     field_type = f
                 else :
-                    field_name = f
-                    fields.append({"type" : types[field_type], "name" : names[field_name]})
-                    sys.stdout.write("%s.%s : %s\n" % (types[struct_type]["name"], names[field_name], types[field_type]["name"])) # debug
+                    field_name, field_type = parse_field_type(names[f], types[field_type])
+                    fields.append({"type" : field_type, "name" : field_name})
+                    sys.stdout.write("%s.%s : %s\n" % (types[struct_type]["name"], field_name, type_name(field_type))) # debug
                 #end if
             #end for
             types[struct_type]["fields"] = fields
