@@ -1,6 +1,12 @@
 #!/usr/bin/python3
 #+
 # Test of trying to parse the contents of .blend files.
+# Invoke this script as follows:
+#
+#     blendparse blendfile
+#
+# where blendfile is the name of a .blend file to analyze.
+# The output of the script will be a dump of the decoded file contents.
 #
 # Created by Lawrence D'Oliveiro <ldo@geek-central.gen.nz>.
 #-
