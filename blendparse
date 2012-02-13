@@ -129,6 +129,10 @@ def decode_data(rawdata, datatype) :
         for i in range(0, datatype.NrElts) :
             result.append(decode_data(rawdata[i * elt_size : (i + 1) * elt_size], datatype.EltType))
         #end for
+        if datatype.EltType == types["char"] :
+            # prettier display
+            result = b"".join(result).rstrip(b"\0").decode("utf-8")
+        #end if
     elif type(datatype) == MethodType :
         result = None # ?
     elif datatype["name"] in primitive_types :
