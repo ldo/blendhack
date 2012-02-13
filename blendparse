@@ -19,6 +19,30 @@ def structread(fromfile, decode_struct) :
     return struct.unpack(decode_struct, fromfile.read(struct.calcsize(decode_struct)))
 #end structread
 
+class DanglingPointer :
+
+    def __init__(self, addr) :
+        self.addr = addr
+    #end __init__
+
+    def __repr__(self) :
+        return "DanglingPointer(0x%x)" % self.addr
+    #end __repr__
+
+#end DanglingPointer
+
+class RoutineAddr :
+
+    def __init__(self, addr) :
+        self.addr = addr
+    #end __init__
+
+    def __repr__(self) :
+        return "RoutineAddr(0x%x)" % self.addr
+    #end __repr__
+
+#end RoutineAddr
+
 #+
 # Handling of Blender types
 #-
@@ -117,10 +141,12 @@ def decode_data(rawdata, datatype) :
     if type(datatype) == PointerType :
         assert len(rawdata) == ptrsize, "expecting pointer to be %d bytes, got %d" % (ptrsize, len(rawdata))
         oldaddress = struct.unpack(endian + ptrcode, rawdata)[0]
-        if oldaddress in blocks_by_oldaddress :
+        if oldaddress == 0 :
+            result = None
+        elif oldaddress in blocks_by_oldaddress :
             result = blocks_by_oldaddress[oldaddress]
         else :
-            result = None # ?
+            result = DanglingPointer(oldaddress)
         #end if
     elif type(datatype) == FixedArrayType :
         result = []
@@ -134,7 +160,9 @@ def decode_data(rawdata, datatype) :
             result = b"".join(result).rstrip(b"\0").decode("utf-8")
         #end if
     elif type(datatype) == MethodType :
-        result = None # ?
+        assert len(rawdata) == ptrsize, "expecting method pointer to be %d bytes, got %d" % (ptrsize, len(rawdata))
+        result = RoutineAddr(struct.unpack(endian + ptrcode, rawdata)[0])
+          # show value just out of curiosity, saved value on disk can't possibly be useful
     elif datatype["name"] in primitive_types :
         assert len(rawdata) == primitive_types[datatype["name"]]["size"], "wrong size for primitive data of type %s, expected %d, got %d" % (datatype["name"], primitive_types[datatype["name"]]["size"], len(rawdata))
         result = struct.unpack(endian + primitive_types[datatype["name"]]["code"], rawdata)[0]
@@ -176,7 +204,7 @@ global_block = None
 while True :
     blockcode, datasize, oldaddr, dna_index, dna_count = \
         structread(fd, "%s4sI%sII" % (endian, ptrcode))
-    sys.stdout.write("blockcode = %s, datasize = %d, oldattr = %x, dna_index = %d, dna_count = %d\n" % (blockcode, datasize, oldaddr, dna_index, dna_count)) # debug
+    sys.stdout.write("blockcode = %s, datasize = %d, oldattr = 0x%x, dna_index = %d, dna_count = %d\n" % (blockcode, datasize, oldaddr, dna_index, dna_count)) # debug
     if blockcode == b"DNA1" :
         sdna_data = fd.read(datasize)
         sdna_id = sdna_data[:4]
