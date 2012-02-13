@@ -187,8 +187,13 @@ def decode_data(rawdata, datatype) :
         #end if
     elif type(datatype) == MethodType :
         assert len(rawdata) == ptrsize, "expecting method pointer to be %d bytes, got %d" % (ptrsize, len(rawdata))
-        result = RoutineAddr(struct.unpack(endian + ptrcode, rawdata)[0])
-          # show value just out of curiosity, saved value on disk can't possibly be useful
+        addr = struct.unpack(endian + ptrcode, rawdata)[0]
+        if addr != 0 :
+            result = RoutineAddr(addr)
+              # show value just out of curiosity, saved value on disk can't possibly be useful
+        else :
+            result = None
+        #end if
     elif datatype["name"] in primitive_types :
         assert len(rawdata) == primitive_types[datatype["name"]]["size"], "wrong size for primitive data of type %s, expected %d, got %d" % (datatype["name"], primitive_types[datatype["name"]]["size"], len(rawdata))
         result = struct.unpack(endian + primitive_types[datatype["name"]]["code"], rawdata)[0]
