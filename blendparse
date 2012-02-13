@@ -20,6 +20,7 @@ def structread(fromfile, decode_struct) :
 #end structread
 
 class DanglingPointer :
+    # for showing pointers that don't seem to point to any valid block
 
     def __init__(self, addr) :
         self.addr = addr
@@ -32,6 +33,7 @@ class DanglingPointer :
 #end DanglingPointer
 
 class RoutineAddr :
+    # for showing pointers to methods
 
     def __init__(self, addr) :
         self.addr = addr
@@ -42,6 +44,19 @@ class RoutineAddr :
     #end __repr__
 
 #end RoutineAddr
+
+class BlockIndex :
+    # for showing references to other blocks
+
+    def __init__(self, index) :
+        self.index = index
+    #end __init__
+
+    def __repr__(self) :
+        return "*Block[%d]" % self.index
+    #end __repr__
+
+#end BlockIndex
 
 #+
 # Handling of Blender types
@@ -144,7 +159,8 @@ def decode_data(rawdata, datatype) :
         if oldaddress == 0 :
             result = None
         elif oldaddress in blocks_by_oldaddress :
-            result = blocks_by_oldaddress[oldaddress]
+            # result = blocks_by_oldaddress[oldaddress]
+            result = BlockIndex(blocks_by_oldaddress[oldaddress]["index"]) # less cluttered display
         else :
             result = DanglingPointer(oldaddress)
         #end if
@@ -303,6 +319,7 @@ while True :
                 "dna_index" : dna_index,
                 "dna_count" : dna_count,
                 "rawdata" : fd.read(datasize),
+                "index" : len(blocks),
             }
         if blockcode == b"GLOB" :
             assert global_block == None, "multiple GLOB blocks found"
