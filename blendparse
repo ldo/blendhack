@@ -157,7 +157,12 @@ def decode_data(rawdata, datatype) :
         #end for
         if datatype.EltType == types["char"] :
             # prettier display
-            result = b"".join(result).rstrip(b"\0").decode("utf-8")
+            result = b"".join(result).rstrip(b"\0")
+            try :
+                result = result.decode("utf-8")
+            except UnicodeDecodeError :
+                pass # leave as bytes
+            #end try
         #end if
     elif type(datatype) == MethodType :
         assert len(rawdata) == ptrsize, "expecting method pointer to be %d bytes, got %d" % (ptrsize, len(rawdata))
