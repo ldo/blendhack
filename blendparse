@@ -1,12 +1,16 @@
 #!/usr/bin/python3
 #+
-# Test of trying to parse the contents of .blend files.
-# Invoke this script as follows:
+# Test of trying to parse the contents of .blend files created by
+# Blender <http://www.blender.org/>. Invoke this script as follows:
 #
 #     blendparse blendfile
 #
 # where blendfile is the name of a .blend file to analyze.
 # The output of the script will be a dump of the decoded file contents.
+#
+# For further info, see
+#     "The Mystery of the Blend" <http://www.atmind.nl/blender/mystery_ot_blend.html>
+#     The Blender source code, doc/blender_file_format subdirectory
 #
 # Copyright 2012 Lawrence D'Oliveiro <ldo@geek-central.gen.nz>.
 #
