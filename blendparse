@@ -93,7 +93,7 @@ class MethodType :
 def parse_field_type(field_name, field_type) :
     # processes special forms of field_name ("*name", "name[ind]", "(*name)()"),
     # returning inner name and adjusting field_type accordingly.
-    if field_name[0] == "*" :
+    if len(field_name) != 0 and field_name[0] == "*" :
         field_name, field_type = parse_field_type(field_name[1:], PointerType(field_type))
     elif field_name[:2] == "(*" and field_name[-3:] == ")()" :
         field_name, field_type = parse_field_type(field_name[2:-3], MethodType(field_type))
@@ -151,8 +151,8 @@ primitive_types = \
         "ulong" : {"code" : "L", "size" : 4},
         "float" : {"code" : "f", "size" : 4},
         "double" : {"code" : "d", "size" : 8},
-        "int64_t" : {"code" : "q", "size" : 8},
-        "uint64_t" : {"code" : "Q", "size" : 8},
+        "int64_t" : {"code" : "q", "size" : 8}, # might not be present
+        "uint64_t" : {"code" : "Q", "size" : 8}, # might not be present
         "void" : {"size" : 0}, # only occurs as pointer object type!
     }
 
@@ -314,7 +314,7 @@ while True :
             types[t["name"]] = t
         #end for
         for k in primitive_types :
-            assert primitive_types[k]["size"] == types[k]["size"], "wrong type size for primitive type %s, expected %d, got %d" % (k, primitive_types[k]["size"], types[k]["size"])
+            assert k not in types or primitive_types[k]["size"] == types[k]["size"], "wrong type size for primitive type %s, expected %d, got %d" % (k, primitive_types[k]["size"], types[k]["size"])
         #end for
     elif blockcode == b"ENDB" :
         # file-end marker block
