@@ -250,6 +250,7 @@ assert sig == b"BLENDER", "unrecognized file header signature %s" % sig
 ptrsize = {b"_" : 4, b"-" : 8}[ptrcode]
 ptrcode = {b"_" : "L", b"-" : "Q"}[ptrcode]
 endian = {b"v" : "<", b"V" : ">"}[endiancode]
+sys.stdout.write("File Blender version = %s, ptrsize = %d, endian = %s\n" % (repr(version), ptrsize, ("little", "big")[endiancode == "V"]))
 blocks = []
 blocks_by_oldaddress = {}
 global_block = None
