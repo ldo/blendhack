@@ -29,6 +29,7 @@
 import sys
 import os
 import struct
+import gzip
 
 #+
 # Useful stuff
@@ -244,7 +245,15 @@ def decode_data(rawdata, datatype) :
 if len(sys.argv) != 2 :
     raise RuntimeError("need one arg, the name of the .blend file to parse")
 #end if
-fd = open(sys.argv[1], "rb")
+origfd = open(sys.argv[1], "rb")
+sig = origfd.read(2)
+origfd.seek(0)
+if sig == b"\x1F\x8B" :
+    fd = gzip.GzipFile(mode = "r", fileobj = origfd)
+else :
+    fd = origfd
+    origfd = None
+#end if
 sig, ptrcode, endiancode, version = structread(fd, "7s1s1s3s")
 assert sig == b"BLENDER", "unrecognized file header signature %s" % sig
 ptrsize = {b"_" : 4, b"-" : 8}[ptrcode]
@@ -365,6 +374,9 @@ while True :
     #end if
 #end while
 fd.close()
+if origfd != None :
+    origfd.close()
+#end if
 assert global_block != None, "missing GLOB block"
 for i, block in enumerate(blocks) :
     block_type = structs[block["dna_index"]]
