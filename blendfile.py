@@ -155,6 +155,9 @@ primitive_types = \
     }
 
 class Blenddata :
+    "Instantiate this to parse a .blend file, parsing it the pathname of the" \
+    " file to read and parse. The returned object will contain the parsed" \
+    " contents of the file."
 
     # Instance variables:
     #     blocks --
