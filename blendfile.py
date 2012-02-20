@@ -5,6 +5,35 @@
 #     "The Mystery of the Blend" <http://www.atmind.nl/blender/mystery_ot_blend.html>
 #     The Blender source code, doc/blender_file_format subdirectory
 #
+# Further info not mentioned above:
+#     Most blocks have code "DATA", however a few have special codes:
+#     * always 1 block with code "GLOB", type FileGlobal (root of block-reference DAG?)
+#     * 1 block with code "REND", type Link, but contents don't seem to be valid.
+#     * 1 block with code "TEST", type Link, but contents don't seem to be valid,
+#           also way too large for 1 Link element.
+#     * one block with code "WM\x00\x00", type wmWindowManager.
+#     * blocks with code "SN\x00\x00" (newer Blender) or "SR\x00\x00" (older Blender), type bScreen.
+#     * one or more blocks with code "SC\x00\x00", type Scene.
+#     * blocks with code "AC\x00\x00", type bAction.
+#     * blocks with code "BR\x00\x00", type Brush.
+#     * blocks with code "CA\x00\x00", type Camera.
+#     * blocks with code "CU\x00\x00", type Curve.
+#     * blocks with code "IM\x00\x00", type Image.
+#     * blocks with code "IP\x00\x00", type Ipo.
+#     * blocks with code "KE\x00\x00", type Key.
+#     * blocks with code "LA\x00\x00", type Lamp.
+#     * blocks with code "MA\x00\x00", type Material.
+#     * blocks with code "ME\x00\x00", type Mesh.
+#     * blocks with code "OB\x00\x00", type Object.
+#     * blocks with code "PA\x00\x00", type ParticleSettings.
+#     * blocks with code "TE\x00\x00", type Tex.
+#     * blocks with code "TX\x00\x00", type Text.
+#     * one or more blocks with code "WO\x00\x00", type World.
+#     * always 1 block with code "DNA1", containing the "structure DNA" (type definitions)
+#     * always 1 block with code "ENDB", marking the end of the file.
+#     Also several "DATA" blocks specify a type of Link (dna_index = 0), which is 2 * ptrsize
+#     bytes, but are smaller than this, or even way larger.
+#
 # Copyright 2012 Lawrence D'Oliveiro <ldo@geek-central.gen.nz>.
 #
 # This program is free software: you can redistribute it and/or modify it under
