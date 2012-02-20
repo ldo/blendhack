@@ -34,7 +34,7 @@ if len(sys.argv) != 2 :
     raise RuntimeError("need one arg, the name of the .blend file to parse")
 #end if
 log = sys.stdout
-blend = blendfile.Blenddata(sys.argv[1], keep_rawdata = True, log = log)
+blend = blendfile.Blenddata().load(sys.argv[1], keep_rawdata = True, log = log)
 for i, block in enumerate(blend.blocks) :
     log.write("block %d(%s)[%s] : %s[%d]\n" % (i, repr(block["code"]), len(block["rawdata"]), block["type"]["name"], block["dna_count"])) # debug
     for item in block["data"] :

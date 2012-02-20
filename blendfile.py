@@ -180,11 +180,11 @@ primitive_types = \
     }
 
 class Blenddata :
-    "Instantiate this to parse a .blend file, parsing it the pathname of the" \
-    " file to read and parse. The returned object will contain the parsed" \
-    " contents of the file."
+    "Call the load method on an instance of this to parse a .blend file, passing it" \
+    " the pathname of the file to read and parse. The returned object will contain the" \
+    " parsed contents of the file."
 
-    # Instance variables:
+    # Instance variables set up by load routine:
     #     blocks --
     #         list of blocks from file, in order of appearance
     #     blocks_by_oldaddress --
@@ -364,7 +364,7 @@ class Blenddata :
             result
     #end decode_data
 
-    def __init__(self, filename, keep_rawdata = False, log = None) :
+    def load(self, filename, keep_rawdata = False, log = None) :
         openlog = None
         if log == None :
             openlog = open("/dev/null", "w")
@@ -444,6 +444,8 @@ class Blenddata :
         if openlog != None :
             openlog.close()
         #end if
-    #end __init__
+        return \
+            self
+    #end load
 
 #end Blenddata
