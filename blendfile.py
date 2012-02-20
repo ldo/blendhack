@@ -33,6 +33,7 @@
 #     * always 1 block with code "ENDB", marking the end of the file.
 #     Also several "DATA" blocks specify a type of Link (dna_index = 0), which is 2 * ptrsize
 #     bytes, but are smaller than this, or even way larger.
+#     Above 2-letter codes may be found in source file source/blender/makesdna/DNA_ID.h.
 #
 # Copyright 2012 Lawrence D'Oliveiro <ldo@geek-central.gen.nz>.
 #
