@@ -217,6 +217,93 @@ class Blenddata :
             result
     #end type_size
 
+    def decode_sdna(self, sdna_data, log) :
+        # decodes a structure definitions block
+        sdna_id = sdna_data[:4]
+        assert sdna_id == b"SDNA", "invalid DNA block header"
+        sdna_data = sdna_data[4:]
+        names = []
+        types_by_index = []
+        structs = []
+        data_offset = 4
+        for \
+            expect_id, collect \
+        in \
+            (
+                (b"NAME", names),
+                (b"TYPE", types_by_index),
+            ) \
+        :
+            assert len(sdna_data) >= 8, "premature end of DNA block"
+            assert expect_id == sdna_data[:4], "expecting %s sub-block in DNA block" % expect_id
+            nr_names = struct.unpack(self.endian + "I", sdna_data[4:8])[0]
+            sdna_data = sdna_data[8:]
+            data_offset += 8
+            for i in range(0, nr_names) :
+                str_end = sdna_data.index(b"\0")
+                collect.append(sdna_data[:str_end].decode("utf-8"))
+                log.write("name[%d] = %s\n" % (i, repr(collect[i]))) # debug
+                data_offset += str_end + 1
+                sdna_data = sdna_data[str_end + 1:]
+            #end for
+            if data_offset % 4 != 0 :
+                sdna_data = sdna_data[4 - data_offset % 4:]
+                data_offset += 4 - data_offset % 4
+            #end if
+        #end for
+        for i in range(0, len(types_by_index)) :
+            types_by_index[i] = {"name" : types_by_index[i]}
+        #end for
+        assert sdna_data[:4] == b"TLEN", "expecting TLEN sub-block in DNA block"
+        sdna_data = sdna_data[4:]
+        data_offset += 4
+        for i, s in enumerate(struct.unpack(self.endian + "H" * len(types_by_index), sdna_data[:2 * len(types_by_index)])) :
+            types_by_index[i]["size"] = s
+            log.write("sizeof(%s) = %d\n" % (types_by_index[i]["name"], types_by_index[i]["size"])) # debug
+        #end for
+        sdna_data = sdna_data[2 * len(types_by_index):]
+        data_offset += 2 * len(types_by_index)
+        if data_offset % 4 != 0 :
+            sdna_data = sdna_data[4 - data_offset % 4:]
+            data_offset += 4 - data_offset % 4
+        #end if
+        assert sdna_data[:4] == b"STRC", "expecting STRC sub-block in DNA block"
+        nr_structs = struct.unpack(self.endian + "I", sdna_data[4:8])[0]
+        sdna_data = sdna_data[8:]
+        data_offset += 8
+        for i in range(0, nr_structs) :
+            struct_type, nr_fields = struct.unpack(self.endian + "HH", sdna_data[:4])
+            sdna_data = sdna_data[4:]
+            fields = []
+            for j, f in enumerate(struct.unpack(self.endian + "HH" * nr_fields, sdna_data[:4 * nr_fields])) :
+                if j % 2 == 0 :
+                    field_type = f
+                else :
+                    field_name, field_type = parse_field_type(names[f], types_by_index[field_type])
+                    fields.append({"type" : field_type, "name" : field_name})
+                    log.write("%s.%s : %s\n" % (types_by_index[struct_type]["name"], field_name, type_name(field_type))) # debug
+                #end if
+            #end for
+            types_by_index[struct_type]["fields"] = fields
+            if len(structs) < i + 1 :
+                structs.extend([None] * (i + 1 - len(structs)))
+            #end if
+            structs[i] = types_by_index[struct_type]
+            log.write("struct[%d] is %s\n" % (i, types_by_index[struct_type]["name"])) # debug
+            sdna_data = sdna_data[4 * nr_fields:]
+        #end for
+        types = {}
+        for t in types_by_index :
+            assert (t["name"] in primitive_types) <= ("fields" not in t), "primitive type %s must not be struct" % t["name"]
+            types[t["name"]] = t
+        #end for
+        for k in primitive_types :
+            assert k not in types or primitive_types[k]["size"] == types[k]["size"], "wrong type size for primitive type %s, expected %d, got %d" % (k, primitive_types[k]["size"], types[k]["size"])
+        #end for
+        return \
+            types, structs
+    #end decode_sdna
+
     def decode_data(self, rawdata, datatype, log) :
         # decodes the bytes of rawdata to Python form according to the type datatype.
         if type(datatype) == PointerType :
@@ -307,89 +394,7 @@ class Blenddata :
                 structread(fd, "%s4sI%sII" % (self.endian, self.ptrcode))
             log.write("blockcode = %s, datasize = %d, oldattr = 0x%x, dna_index = %d, dna_count = %d\n" % (blockcode, datasize, oldaddr, dna_index, dna_count)) # debug
             if blockcode == b"DNA1" :
-                # decode the structure definitions
-                sdna_data = fd.read(datasize)
-                sdna_id = sdna_data[:4]
-                assert sdna_id == b"SDNA", "invalid DNA block header"
-                sdna_data = sdna_data[4:]
-                names = []
-                types_by_index = []
-                structs = []
-                data_offset = 4
-                for \
-                    expect_id, collect \
-                in \
-                    (
-                        (b"NAME", names),
-                        (b"TYPE", types_by_index),
-                    ) \
-                :
-                    assert len(sdna_data) >= 8, "premature end of DNA block"
-                    assert expect_id == sdna_data[:4], "expecting %s sub-block in DNA block" % expect_id
-                    nr_names = struct.unpack(self.endian + "I", sdna_data[4:8])[0]
-                    sdna_data = sdna_data[8:]
-                    data_offset += 8
-                    for i in range(0, nr_names) :
-                        str_end = sdna_data.index(b"\0")
-                        collect.append(sdna_data[:str_end].decode("utf-8"))
-                        log.write("name[%d] = %s\n" % (i, repr(collect[i]))) # debug
-                        data_offset += str_end + 1
-                        sdna_data = sdna_data[str_end + 1:]
-                    #end for
-                    if data_offset % 4 != 0 :
-                        sdna_data = sdna_data[4 - data_offset % 4:]
-                        data_offset += 4 - data_offset % 4
-                    #end if
-                #end for
-                for i in range(0, len(types_by_index)) :
-                    types_by_index[i] = {"name" : types_by_index[i]}
-                #end for
-                assert sdna_data[:4] == b"TLEN", "expecting TLEN sub-block in DNA block"
-                sdna_data = sdna_data[4:]
-                data_offset += 4
-                for i, s in enumerate(struct.unpack(self.endian + "H" * len(types_by_index), sdna_data[:2 * len(types_by_index)])) :
-                    types_by_index[i]["size"] = s
-                    log.write("sizeof(%s) = %d\n" % (types_by_index[i]["name"], types_by_index[i]["size"])) # debug
-                #end for
-                sdna_data = sdna_data[2 * len(types_by_index):]
-                data_offset += 2 * len(types_by_index)
-                if data_offset % 4 != 0 :
-                    sdna_data = sdna_data[4 - data_offset % 4:]
-                    data_offset += 4 - data_offset % 4
-                #end if
-                assert sdna_data[:4] == b"STRC", "expecting STRC sub-block in DNA block"
-                nr_structs = struct.unpack(self.endian + "I", sdna_data[4:8])[0]
-                sdna_data = sdna_data[8:]
-                data_offset += 8
-                for i in range(0, nr_structs) :
-                    struct_type, nr_fields = struct.unpack(self.endian + "HH", sdna_data[:4])
-                    sdna_data = sdna_data[4:]
-                    fields = []
-                    for j, f in enumerate(struct.unpack(self.endian + "HH" * nr_fields, sdna_data[:4 * nr_fields])) :
-                        if j % 2 == 0 :
-                            field_type = f
-                        else :
-                            field_name, field_type = parse_field_type(names[f], types_by_index[field_type])
-                            fields.append({"type" : field_type, "name" : field_name})
-                            log.write("%s.%s : %s\n" % (types_by_index[struct_type]["name"], field_name, type_name(field_type))) # debug
-                        #end if
-                    #end for
-                    types_by_index[struct_type]["fields"] = fields
-                    if len(structs) < i + 1 :
-                        structs.extend([None] * (i + 1 - len(structs)))
-                    #end if
-                    structs[i] = types_by_index[struct_type]
-                    log.write("struct[%d] is %s\n" % (i, types_by_index[struct_type]["name"])) # debug
-                    sdna_data = sdna_data[4 * nr_fields:]
-                #end for
-                self.types = {}
-                for t in types_by_index :
-                    assert (t["name"] in primitive_types) <= ("fields" not in t), "primitive type %s must not be struct" % t["name"]
-                    self.types[t["name"]] = t
-                #end for
-                for k in primitive_types :
-                    assert k not in self.types or primitive_types[k]["size"] == self.types[k]["size"], "wrong type size for primitive type %s, expected %d, got %d" % (k, primitive_types[k]["size"], self.types[k]["size"])
-                #end for
+                self.types, structs = self.decode_sdna(fd.read(datasize), log)
             elif blockcode == b"ENDB" :
                 # file-end marker block
                 break
