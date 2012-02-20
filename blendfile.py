@@ -157,7 +157,7 @@ class Blenddata :
     # Instance variables:
     #     blocks --
     #         list of blocks from file, in order of appearance
-    #     blocks_by_old_address --
+    #     blocks_by_oldaddress --
     #         table of blocks from file, indexed by old-address field
     #     endian --
     #         prefix code to use with struct.unpack to indicate endianness of data
