@@ -125,17 +125,12 @@ def parse_field_type(field_name, field_type) :
 
 def type_name(of_type) :
     # returns a readable display of of_type.
-    if type(of_type) == PointerType :
-        result = type_name(of_type.EltType) + "*"
-    elif type(of_type) == FixedArrayType :
-        result = "%s[%d]" % (type_name(of_type.EltType), of_type.NrElts)
-    elif type(of_type) == MethodType :
-        result = "%s (*)()" % type_name(of_type.ResultType)
-    else :
-        result = of_type["name"]
-    #end if
     return \
-        result
+        {
+            PointerType : lambda : type_name(of_type.EltType) + "*",
+            FixedArrayType : lambda : "%s[%d]" % (type_name(of_type.EltType), of_type.NrElts),
+            MethodType : lambda : "%s (*)()" % type_name(of_type.ResultType),
+        }.get(type(of_type), lambda : of_type["name"])()
 #end type_name
 
 primitive_types = \
