@@ -421,7 +421,7 @@ class Blenddata :
             origfd.close()
         #end if
         assert self.global_block != None, "missing GLOB block"
-        for block in self.blocks :
+        for i, block in enumerate(self.blocks) :
             block_type = structs[block["dna_index"]]
             block["type"] = block_type
             decoded = []
@@ -436,6 +436,10 @@ class Blenddata :
                       )
                   )
             #end for
+            leftover = max(len(block["rawdata"]) - block_type["size"] * block["dna_count"], 0)
+            if leftover > 0 :
+                log.write("# ignoring %d bytes at end of block %d\n" % (leftover, i))
+            #end if
             block["data"] = decoded
             if not keep_rawdata :
                 del block["rawdata"]
