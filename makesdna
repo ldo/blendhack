@@ -8,8 +8,9 @@
 #
 # where the first argument is the path to the makesdna executable, and
 # the second is the path to the subdirectory in the Blender source tree
-# containing the .h files for the makesdna executable to read. The encoded
-# SDNA block will be written to standard output as a Python bytes literal.
+# containing the .h files for the makesdna executable to read. The encoded,
+# compressed SDNA block will be written to standard output as a Python bytes
+# expression.
 #
 # Copyright 2012 Lawrence D'Oliveiro <ldo@geek-central.gen.nz>.
 #
@@ -28,6 +29,7 @@
 import sys
 import re
 import subprocess
+import bz2 as compressor # compression cuts size down by half
 
 if len(sys.argv) != 3 :
     raise RuntimeError("usage: %s <builddir>/bin/makesdna <srcdir>/source/blender/makesdna/" % sys.argv[0])
@@ -42,14 +44,21 @@ rawdata = subprocess.Popen \
     args = (prog, "/dev/stdout", dna_dir),
     stdout = subprocess.PIPE,
   ).communicate()[0].decode("utf-8")
-sys.stdout.write("sdna = bytes([\n")
-line_started = False
-line_len = 0
+uncompressed = []
 while True :
     nextbyte = re.search(r"(\d+)\,", rawdata)
     if nextbyte == None :
         break
-    thisbyte = nextbyte.expand(r"\1")
+    uncompressed.append(int(nextbyte.expand(r"\1")))
+    rawdata = rawdata[nextbyte.span()[1]:]
+#end while
+compressed = list(compressor.compress(bytes(uncompressed)))
+sys.stdout.write("sdna = bytes([\n")
+line_started = False
+line_len = 0
+while len(compressed) != 0 :
+    thisbyte = "%d" % compressed[0]
+    compressed = compressed[1:]
     if line_len + 1 + len(thisbyte) + 1 > 72 :
         sys.stdout.write("\n   ")
         line_len = 3
@@ -57,7 +66,6 @@ while True :
     line_started = True
     sys.stdout.write(" " + thisbyte + ",")
     line_len += len(thisbyte) + 2
-    rawdata = rawdata[nextbyte.span()[1]:]
 #end while
 if line_started :
     sys.stdout.write("\n")
