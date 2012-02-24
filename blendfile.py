@@ -63,7 +63,7 @@ def structread(fromfile, decode_struct) :
 #end structread
 
 class DanglingPointer :
-    # for showing pointers that don't seem to point to any valid block
+    "for showing pointers that don't seem to point to any valid block"
 
     def __init__(self, addr) :
         self.addr = addr
@@ -76,7 +76,7 @@ class DanglingPointer :
 #end DanglingPointer
 
 class RoutineAddr :
-    # for showing pointers to methods
+    "for showing pointers to methods"
 
     def __init__(self, addr) :
         self.addr = addr
@@ -89,7 +89,7 @@ class RoutineAddr :
 #end RoutineAddr
 
 class BlockIndex :
-    # for showing references to other blocks
+    "for showing references to other blocks"
 
     def __init__(self, index) :
         self.index = index
@@ -106,7 +106,7 @@ class BlockIndex :
 #-
 
 class PointerType :
-    # represents a pointer
+    "represents a pointer"
 
     def __init__(self, EltType) :
         self.EltType = EltType
@@ -115,7 +115,7 @@ class PointerType :
 #end PointerType
 
 class FixedArrayType :
-    # represents a fixed-length array
+    "represents a fixed-length array"
 
     def __init__(self, EltType, NrElts) :
         self.EltType = EltType
@@ -125,7 +125,7 @@ class FixedArrayType :
 #end FixedArrayType :
 
 class MethodType :
-    # represents a pointer to a routine
+    "represents a pointer to a routine"
 
     def __init__(self, ResultType) :
         self.ResultType = ResultType
@@ -222,7 +222,7 @@ class Blenddata :
     #end type_size
 
     def decode_sdna(self, sdna_data, log) :
-        # decodes a structure definitions block
+        "decodes a structure definitions block"
         sdna_id = sdna_data[:4]
         assert sdna_id == b"SDNA", "invalid DNA block header"
         sdna_data = sdna_data[4:]
@@ -367,6 +367,7 @@ class Blenddata :
     #end decode_data
 
     def load(self, filename, keep_rawdata = False, log = None) :
+        "loads the contents of the specified .blend file."
         openlog = None
         if log == None :
             openlog = open("/dev/null", "w")
