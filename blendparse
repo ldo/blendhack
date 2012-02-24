@@ -3,9 +3,10 @@
 # Test of trying to parse the contents of .blend files created by
 # Blender <http://www.blender.org/>. Invoke this script as follows:
 #
-#     blendparse blendfile
+#     blendparse blendfile [outfile]
 #
-# where blendfile is the name of a .blend file to analyze.
+# where blendfile is the name of a .blend file to analyze, and outfile
+# is an optional output .blend file to try creating.
 # The output of the script will be a dump of the decoded file contents.
 #
 # Copyright 2012 Lawrence D'Oliveiro <ldo@geek-central.gen.nz>.
@@ -23,15 +24,15 @@
 #-
 
 import sys
-
+import struct
 import blendfile
 
 #+
 # Mainline
 #-
 
-if len(sys.argv) != 2 :
-    raise RuntimeError("need one arg, the name of the .blend file to parse")
+if len(sys.argv) not in (2, 3) :
+    raise RuntimeError("usage: %s blendfile [outfile]" % sys.argv[0])
 #end if
 log = sys.stdout
 blend = blendfile.Blenddata().load(sys.argv[1], keep_rawdata = True, log = log)
@@ -41,4 +42,12 @@ for i, block in enumerate(blend.blocks) :
         log.write(" => " + repr(item) + "\n")
     #end for
 #end for
-
+if len(sys.argv) > 2 :
+    outfile = open(sys.argv[2], "wb")
+    outfile.write(blendfile.blender_sig + {4 : b"_", 8 : b"-"}[blend.ptrsize] + {False : b"v", True : b"V"}[blend.big_endian] + b"001")
+    sdna = blend.encode_sdna()
+    outfile.write(struct.pack("%s4sI%sII" % (blend.endian, blend.ptrcode), b"DNA1", len(sdna), 1, 0, 1) + sdna)
+    outfile.write(struct.pack("%s4sI%sII" % (blend.endian, blend.ptrcode), b"ENDB", 0, 1, 0, 1) + sdna)
+    outfile.flush()
+    outfile.close()
+#end if

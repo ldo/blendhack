@@ -49,6 +49,8 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 #-
 
+import sys
+import io
 import struct
 import gzip
 
@@ -153,6 +155,24 @@ def parse_field_type(field_name, field_type) :
         field_name, field_type
 #end parse_field_type
 
+def encode_field_type(field_name, field_type) :
+    # does the opposite of parse_field_type, encoding derived (pointer, array, method)
+    # type information into field_name.
+    if type(field_type) == PointerType :
+        field_name, field_type = encode_field_type("*" + field_name, field_type.EltType)
+    elif type(field_type) == FixedArrayType :
+        orig_field_type = field_type
+        field_name, field_type = encode_field_type(field_name, field_type.EltType)
+        field_name = "%s[%d]" % (field_name, orig_field_type.NrElts)
+    elif type(field_type) == MethodType :
+        field_name, field_type = encode_field_type("(*%s)()" % field_name, field_type.ResultType)
+    else :
+        field_type = field_type["name"]
+    #end if
+    return \
+        field_name, field_type
+#end encode_field_type
+
 def type_name(of_type) :
     # returns a readable display of of_type.
     return \
@@ -178,6 +198,8 @@ primitive_types = \
         "uint64_t" : {"code" : "Q", "size" : 8}, # might not be present
         "void" : {"size" : 0}, # only occurs as pointer object type!
     }
+
+blender_sig = b"BLENDER"
 
 class Blenddata :
     "Call the load method on an instance of this to parse a .blend file, passing it" \
@@ -206,6 +228,20 @@ class Blenddata :
     #     version --
     #         3-character version code from file header
 
+    def __init__(self, big_endian = None, pointer_size = None) :
+        "args are only important for writing, ignored for reading"
+        if big_endian == None :
+            big_endian = sys.byteorder == "big"
+        #end if
+        if pointer_size == None :
+            pointer_size = 4 # given I'm not really using them as pointers, why waste space?
+        #end if
+        self.ptrsize = pointer_size
+        self.ptrcode = {4 : "L", 8 : "Q"}[pointer_size]
+        self.big_endian = big_endian
+        self.endian = {False : "<", True : ">"}[big_endian]
+    #end __init__
+
     def type_size(self, of_type) :
         # determines the size in bytes of objects of type of_type.
         if type(of_type) == PointerType :
@@ -222,7 +258,7 @@ class Blenddata :
     #end type_size
 
     def decode_sdna(self, sdna_data, log) :
-        "decodes a structure definitions block"
+        "decodes a structure definitions block and saves the results in instance variables."
         sdna_id = sdna_data[:4]
         assert sdna_id == b"SDNA", "invalid DNA block header"
         sdna_data = sdna_data[4:]
@@ -256,7 +292,7 @@ class Blenddata :
             #end if
         #end for
         for i in range(0, len(self.types_by_index)) :
-            self.types_by_index[i] = {"name" : self.types_by_index[i]}
+            self.types_by_index[i] = {"name" : self.types_by_index[i], "index" : i}
         #end for
         assert sdna_data[:4] == b"TLEN", "expecting TLEN sub-block in DNA block"
         sdna_data = sdna_data[4:]
@@ -305,6 +341,77 @@ class Blenddata :
             assert k not in self.types or primitive_types[k]["size"] == self.types[k]["size"], "wrong type size for primitive type %s, expected %d, got %d" % (k, primitive_types[k]["size"], self.types[k]["size"])
         #end for
     #end decode_sdna
+
+    def encode_sdna(self) :
+        "returns bytes for an SDNA block representing my defined types."
+        names = {}
+        structs_by_index = []
+        for this_struct in self.structs_by_index :
+            fields = []
+            for field in this_struct["fields"] :
+                field_name, field_type = encode_field_type(field["name"], field["type"])
+                if not field_name in names :
+                    names[field_name] = len(names)
+                #end if
+                fields.append \
+                  (
+                    {
+                        "name" : names[field_name],
+                        "type" : self.types[field_type]["index"],
+                    }
+                  )
+            #end for
+            structs_by_index.append \
+              (
+                {
+                    "type" : this_struct["index"],
+                    "fields" : fields,
+                }
+              )
+        #end for
+        out = io.BytesIO()
+        out.write(b"SDNA")
+        out.write(b"NAME" + struct.pack(self.endian + "I", len(names)))
+        offset = 0
+        names = list(sorted(names.keys(), key = lambda n : names[n]))
+        for i in range(0, len(names)) :
+            thisname = names[i].encode("utf-8") + b"\0"
+            out.write(thisname)
+            offset += len(thisname)
+        #end for
+        if offset % 4 != 0 :
+            out.write(b"\0" * (4 - offset % 4))
+        #end if
+        out.write(b"TYPE" + struct.pack(self.endian + "I", len(self.types_by_index)))
+        offset = 0
+        for thistype in self.types_by_index:
+            thisname = thistype["name"].encode("utf-8") + b"\0"
+            out.write(thisname)
+            offset += len(thisname)
+        #end for
+        if offset % 4 != 0 :
+            out.write(b"\0" * (4 - offset % 4))
+        #end if
+        out.write(b"TLEN")
+        offset = 0
+        for thistype in self.types_by_index:
+            out.write(struct.pack(self.endian + "H", thistype["size"]))
+            offset += 2
+        #end for
+        if offset % 4 != 0 :
+            out.write(b"\0" * (4 - offset % 4))
+        #end if
+        out.write(b"STRC" + struct.pack(self.endian + "I", len(structs_by_index)))
+        for this_struct in structs_by_index :
+            fields = this_struct["fields"]
+            out.write(struct.pack(self.endian + "HH", this_struct["type"], len(fields)))
+            for field in fields :
+                out.write(struct.pack(self.endian + "HH", field["type"], field["name"]))
+            #end for
+        #end for
+        return \
+            out.getvalue()
+    #end encode_sdna
 
     def decode_data(self, rawdata, datatype, log) :
         # decodes the bytes of rawdata to Python form according to the type datatype.
@@ -383,10 +490,11 @@ class Blenddata :
             origfd = None
         #end if
         sig, ptrcode, endiancode, self.version = structread(fd, "7s1s1s3s")
-        assert sig == b"BLENDER", "unrecognized file header signature %s" % sig
+        assert sig == blender_sig, "unrecognized file header signature %s" % sig
         self.ptrsize = {b"_" : 4, b"-" : 8}[ptrcode]
         self.ptrcode = {b"_" : "L", b"-" : "Q"}[ptrcode]
         self.endian = {b"v" : "<", b"V" : ">"}[endiancode]
+        self.big_endian = endiancode == "V"
         log.write("File Blender version = %s, ptrsize = %d, endian = %s\n" % (repr(self.version), self.ptrsize, ("little", "big")[endiancode == "V"]))
         self.blocks = []
         self.blocks_by_oldaddress = {}
@@ -395,7 +503,7 @@ class Blenddata :
             # collect all the blocks
             blockcode, datasize, oldaddr, dna_index, dna_count = \
                 structread(fd, "%s4sI%sII" % (self.endian, self.ptrcode))
-            log.write("blockcode = %s, datasize = %d, oldattr = 0x%x, dna_index = %d, dna_count = %d\n" % (blockcode, datasize, oldaddr, dna_index, dna_count)) # debug
+            log.write("blockcode = %s, datasize = %d, oldaddr = 0x%x, dna_index = %d, dna_count = %d\n" % (blockcode, datasize, oldaddr, dna_index, dna_count)) # debug
             if blockcode == b"DNA1" :
                 self.decode_sdna(fd.read(datasize), log)
             elif blockcode == b"ENDB" :
