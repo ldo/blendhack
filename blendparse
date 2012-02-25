@@ -35,9 +35,12 @@ if len(sys.argv) not in (2, 3) :
     raise RuntimeError("usage: %s blendfile [outfile]" % sys.argv[0])
 #end if
 log = sys.stdout
-blend = blendfile.Blenddata().load(sys.argv[1], keep_rawdata = True, log = log)
+blend = blendfile.Blenddata().load(sys.argv[1], keep_rawdata = True, count_refs = True, log = log)
 for i, block in enumerate(blend.blocks) :
     log.write("block %d(%s)[%s] : %s[%d]\n" % (i, repr(block["code"]), len(block["rawdata"]), block["type"]["name"], block["dna_count"])) # debug
+    if block.get("refs") == 0 :
+        log.write(" - no refs to this block\n")
+    #end if
     for item in block["data"] :
         log.write(" => " + repr(item) + "\n")
     #end for

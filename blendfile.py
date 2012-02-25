@@ -422,7 +422,11 @@ class Blenddata :
                 result = None
             elif oldaddress in self.blocks_by_oldaddress :
                 # result = self.blocks_by_oldaddress[oldaddress]
-                result = BlockIndex(self.blocks_by_oldaddress[oldaddress]["index"]) # less cluttered display
+                the_block = self.blocks_by_oldaddress[oldaddress]
+                if "refs" in the_block :
+                    the_block["refs"] += 1
+                #end if
+                result = BlockIndex(the_block["index"]) # less cluttered display
             else :
                 result = DanglingPointer(oldaddress)
             #end if
@@ -473,7 +477,7 @@ class Blenddata :
             result
     #end decode_data
 
-    def load(self, filename, keep_rawdata = False, log = None) :
+    def load(self, filename, keep_rawdata = False, count_refs = False, log = None) :
         "loads the contents of the specified .blend file."
         openlog = None
         if log == None :
@@ -519,6 +523,9 @@ class Blenddata :
                         "rawdata" : fd.read(datasize),
                         "index" : len(self.blocks),
                     }
+                if count_refs :
+                    new_block["refs"] = 0
+                #end if
                 if blockcode == b"GLOB" :
                     assert self.global_block == None, "multiple GLOB blocks found"
                     self.global_block = new_block
