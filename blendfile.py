@@ -7,7 +7,7 @@
 #
 # Further info not mentioned above:
 #     Most blocks have code "DATA", however a few have special codes:
-#     * always 1 block with code "GLOB", type FileGlobal (root of block-reference DAG?)
+#     * always 1 block with code "GLOB", type FileGlobal
 #     * 1 block with code "REND", type Link, but contents don't seem to be valid.
 #     * 1 block with code "TEST", type Link, but contents don't seem to be valid,
 #           also way too large for 1 Link element.
@@ -34,6 +34,13 @@
 #     Also several "DATA" blocks specify a type of Link (dna_index = 0), which is 2 * ptrsize
 #     bytes, but are smaller than this, or even way larger.
 #     Above 2-letter codes may be found in source file source/blender/makesdna/DNA_ID.h.
+#
+# The GLOB block is the root of a directed acyclic graph by which all other blocks
+# (except the REND block, and of course the DNA1 and ENDB blocks) are directly or indirectly
+# referenced; UI elements are linked through its curscreen field (pointing to a bScreen
+# structure), and scene/model data is linked through its curscene field (pointing to a
+# Scene structure). bScreens and Scenes are each linked into their own doubly-linked list
+# via next and prev fields. All other objects are found via pointers from these structures.
 #
 # Copyright 2012 Lawrence D'Oliveiro <ldo@geek-central.gen.nz>.
 #
