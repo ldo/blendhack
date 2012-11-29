@@ -50,7 +50,7 @@ if len(sys.argv) > 2 :
     outfile.write(blendfile.blender_sig + {4 : b"_", 8 : b"-"}[blend.ptrsize] + {False : b"v", True : b"V"}[blend.big_endian] + b"001")
     sdna = blend.encode_sdna()
     outfile.write(struct.pack("%s4sI%sII" % (blend.endian, blend.ptrcode), b"DNA1", len(sdna), 1, 0, 1) + sdna)
-    outfile.write(struct.pack("%s4sI%sII" % (blend.endian, blend.ptrcode), b"ENDB", 0, 1, 0, 1) + sdna)
+    outfile.write(struct.pack("%s4sI%sII" % (blend.endian, blend.ptrcode), b"ENDB", 0, 1, 0, 1))
     outfile.flush()
     outfile.close()
 #end if
