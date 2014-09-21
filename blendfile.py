@@ -44,8 +44,11 @@
 #     * blocks with code "BR\x00\x00", type Brush.
 #     * blocks with code "PY\x00\x00", type Script (obsolete).
 #     * blocks with code "GD\x00\x00", type GreasePencil.
-#     * blocks with code "IP\x00\x00", type Ipo (obsolete, replaced by FCurves).
+#     * blocks with code "IP\x00\x00", type Ipo (obsolete, replaced by FCurves in DATA blocks).
 #     * blocks with code "LI\x00\x00", type Library.
+#     * possibly one block with code "USER" (only present in startup.blend),
+#       followed by DATA blocks containing custom keymaps, addon properties, autoexec paths
+#       and style definitions.
 #     * always 1 block with code "DNA1", containing the "structure DNA" (type definitions).
 #       Must be the last block, except for "ENDB"; Blender actually stops reading the file
 #       when it has processed this block.
@@ -66,7 +69,7 @@
 # doubly-linked list via next and prev fields. All other objects are found via pointers
 # from these structures.
 #
-# Copyright 2012 Lawrence D'Oliveiro <ldo@geek-central.gen.nz>.
+# Copyright 2012-2014 Lawrence D'Oliveiro <ldo@geek-central.gen.nz>.
 #
 # This program is free software: you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software
