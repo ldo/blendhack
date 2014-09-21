@@ -1,46 +1,70 @@
 #+
 # Parsing of .blend files created by Blender <http://www.blender.org/>.
 #
-# For further info, see
+# For some info, see
 #     "The Mystery of the Blend" <http://www.atmind.nl/blender/mystery_ot_blend.html>
 #     The Blender source code, doc/blender_file_format subdirectory
 #
 # Further info not mentioned above:
 #     Most blocks have code "DATA", however a few have special codes:
 #     * always 1 block with code "GLOB", type FileGlobal
-#     * 1 block with code "REND", type Link, but contents don't seem to be valid.
-#     * 1 block with code "TEST", type Link, but contents don't seem to be valid,
-#           also way too large for 1 Link element.
+#     * 1 block with code "REND", type Link, but contents are actually the RenderInfo
+#       struct in source/blender/blenloader/intern/writefile.c in the Blender source.
+#       Looks like there is potential to have more than one of these in future, as
+#       soon as some code is added that sets the R_BG_RENDER flag on scenes.
+#     * 1 block with code "TEST", type Link, but contents are actually the preview image
+#           bitmap, format is integer width, integer height, followed by width * height
+#           32-bit RGBA pixels. For code that extracts it, see source file
+#           release/bin/blender-thumbnailer.py.
 #     * one block with code "WM\x00\x00", type wmWindowManager.
 #     * blocks with code "SN\x00\x00" (newer Blender) or "SR\x00\x00" (older Blender), type bScreen.
+#     * blocks with code "MC\x00\x00", type MovieClip.
+#     * blocks with code "MS\x00\x00", type Mask.
 #     * one or more blocks with code "SC\x00\x00", type Scene.
-#     * blocks with code "AC\x00\x00", type bAction.
-#     * blocks with code "BR\x00\x00", type Brush.
-#     * blocks with code "CA\x00\x00", type Camera.
 #     * blocks with code "CU\x00\x00", type Curve.
+#     * blocks with code "MB\x00\x00", type MetaBall.
 #     * blocks with code "IM\x00\x00", type Image.
-#     * blocks with code "IP\x00\x00", type Ipo.
-#     * blocks with code "KE\x00\x00", type Key.
+#     * blocks with code "CA\x00\x00", type Camera.
 #     * blocks with code "LA\x00\x00", type Lamp.
-#     * blocks with code "MA\x00\x00", type Material.
-#     * blocks with code "ME\x00\x00", type Mesh.
-#     * blocks with code "OB\x00\x00", type Object.
-#     * blocks with code "PA\x00\x00", type ParticleSettings.
-#     * blocks with code "TE\x00\x00", type Tex.
+#     * blocks with code "LT\x00\x00", type Lattice.
+#     * blocks with code "VF\x00\x00", type VectorFont.
+#     * blocks with code "KE\x00\x00", type Key (shape key).
+#     * blocks with code "WO\x00\x00", type World.
 #     * blocks with code "TX\x00\x00", type Text.
-#     * one or more blocks with code "WO\x00\x00", type World.
-#     * always 1 block with code "DNA1", containing the "structure DNA" (type definitions)
+#     * blocks with code "SK\x00\x00", type Speaker.
+#     * blocks with code "SO\x00\x00", type Sound.
+#     * blocks with code "GR\x00\x00", type Group.
+#     * blocks with code "AC\x00\x00", type bAction.
+#     * blocks with code "OB\x00\x00", type Object.
+#     * blocks with code "MA\x00\x00", type Material.
+#     * blocks with code "TE\x00\x00", type Tex(ture).
+#     * blocks with code "ME\x00\x00", type Mesh.
+#     * blocks with code "PA\x00\x00", type ParticleSettings.
+#     * blocks with code "NT\x00\x00", type NodeTree.
+#     * blocks with code "BR\x00\x00", type Brush.
+#     * blocks with code "PY\x00\x00", type Script (obsolete).
+#     * blocks with code "GD\x00\x00", type GreasePencil.
+#     * blocks with code "IP\x00\x00", type Ipo (obsolete, replaced by FCurves).
+#     * blocks with code "LI\x00\x00", type Library.
+#     * always 1 block with code "DNA1", containing the "structure DNA" (type definitions).
+#       Must be the last block, except for "ENDB"; Blender actually stops reading the file
+#       when it has processed this block.
 #     * always 1 block with code "ENDB", marking the end of the file.
 #     Also several "DATA" blocks specify a type of Link (dna_index = 0), which is 2 * ptrsize
 #     bytes, but are smaller than this, or even way larger.
-#     Above 2-letter codes may be found in source file source/blender/makesdna/DNA_ID.h.
+#     The above 2-letter codes may be found in source file source/blender/makesdna/DNA_ID.h.
+#     The significance of the code always ending with two zero bytes is that these blocks
+#     have user-visible names: these names are required to be unique among blocks of the
+#     same type, and are prefixed internally with the two initial bytes of the block code,
+#     allowing two blocks with different codes to have the same user-visible name.
 #
 # The GLOB block is the root of a directed acyclic graph by which all other blocks
-# (except the REND block, and of course the DNA1 and ENDB blocks) are directly or indirectly
-# referenced; UI elements are linked through its curscreen field (pointing to a bScreen
-# structure), and scene/model data is linked through its curscene field (pointing to a
-# Scene structure). bScreens and Scenes are each linked into their own doubly-linked list
-# via next and prev fields. All other objects are found via pointers from these structures.
+# (except the REND and TEST blocks, and of course the DNA1 and ENDB blocks) are directly
+# or indirectly referenced; UI elements are linked through its curscreen field (pointing
+# to a bScreen structure), and scene/model data is linked through its curscene field
+# (pointing to a Scene structure). bScreens and Scenes are each linked into their own
+# doubly-linked list via next and prev fields. All other objects are found via pointers
+# from these structures.
 #
 # Copyright 2012 Lawrence D'Oliveiro <ldo@geek-central.gen.nz>.
 #
@@ -144,7 +168,7 @@ class MethodType :
 
 def parse_field_type(field_name, field_type) :
     # processes special forms of field_name ("*name", "name[ind]", "(*name)()"),
-    # returning inner name and adjusting field_type accordingly.
+    # returning innermost name and adjusting field_type accordingly.
     if len(field_name) != 0 and field_name[0] == "*" :
         field_name, field_type = parse_field_type(field_name[1:], PointerType(field_type))
     elif field_name[:2] == "(*" and field_name[-3:] == ")()" :
@@ -167,12 +191,12 @@ def encode_field_type(field_name, field_type) :
     # type information into field_name.
     if type(field_type) == PointerType :
         field_name, field_type = encode_field_type("*" + field_name, field_type.EltType)
+    elif type(field_type) == MethodType :
+        field_name, field_type = encode_field_type("(*%s)()" % field_name, field_type.ResultType)
     elif type(field_type) == FixedArrayType :
         orig_field_type = field_type
         field_name, field_type = encode_field_type(field_name, field_type.EltType)
         field_name = "%s[%d]" % (field_name, orig_field_type.NrElts)
-    elif type(field_type) == MethodType :
-        field_name, field_type = encode_field_type("(*%s)()" % field_name, field_type.ResultType)
     else :
         field_type = field_type["name"]
     #end if
@@ -191,12 +215,13 @@ def type_name(of_type) :
 #end type_name
 
 primitive_types = \
-    {
+    { # "code" is the code to pass to struct.pack/unpack to pack/unpack values of this type
         "char" : {"code" : "c", "size" : 1},
         "uchar" : {"code" : "B", "size" : 1},
         "short" : {"code" : "h", "size" : 2},
         "ushort" : {"code" : "H", "size" : 2},
         "int" : {"code" : "i", "size" : 4},
+        # notice what's missing? No unsigned int!
         "long" : {"code" : "l", "size" : 4},
         "ulong" : {"code" : "L", "size" : 4},
         "float" : {"code" : "f", "size" : 4},
@@ -222,18 +247,42 @@ class Blenddata :
     #         prefix code to use with struct.unpack to indicate endianness of data
     #     global_block --
     #         "GLOB" block
+    #     link_type --
+    #         the Link type, that needs to be treated specially because fields
+    #         of this type are often missing
     #     ptrcode --
     #         code to use to struct.unpack to decode a pointer field
     #     ptrsize --
     #         size in bytes of an address according to version of Blender which created the file
     #     structs_by_index --
-    #         struct definitions collected from Structure DNA block, indexed by number
+    #         struct type definitions collected from Structure DNA block, indexed by number
     #     types --
     #         type definitions collected from Structure DNA block, indexed by name
     #     types_by_index
     #         type definitions collected from Structure DNA block, indexed by number
     #     version --
     #         3-character version code from file header
+
+    # Struct (non-primitive) types will be found in structs_by_index, types and types_by_index;
+    # primitive types only in the latter two. Non-pointer/array/method types are represented
+    # by dicts with the following entries:
+    #     "fields" -- (non-primitive types only) array of field definitions, each of which
+    #                 is a dict, with "name" and "type" entries
+    #     "index" -- the index of the type entry in types_by_index
+    #     "name" -- the (string) name of the type
+    #     "size" -- the total size in bytes of the type
+    # Pointer, array and method types are represented by objects of PointerType,
+    # FixedArrayType and MethodType (defined above) respectively.
+
+    # Each block is represented by a dict with the following entries:
+    #     "code" -- the four-byte block code
+    #     "data" -- the decoded block data, as an array of elements of the block type
+    #     "dna_count" -- the number of array elements in the block
+    #     "dna_index" -- the index into structs_by_index of the block type
+    #     "index" -- the index number of the block, used for less-cluttered display dumps
+    #     "oldaddr" -- the saved in-memory address of the block
+    #     "rawdata" -- the raw, undecoded data (only kept if keep_rawdata is specified to load)
+    #     "refs" -- number of references to this block (optional, only present if count_refs is specified to load)
 
     def __init__(self, big_endian = None, pointer_size = None) :
         "args are only important for writing, ignored for reading"
@@ -272,6 +321,7 @@ class Blenddata :
         names = []
         self.types_by_index = []
         self.structs_by_index = []
+        self.link_type = None
         data_offset = 4
         for \
             expect_id, collect \
@@ -304,7 +354,20 @@ class Blenddata :
         assert sdna_data[:4] == b"TLEN", "expecting TLEN sub-block in DNA block"
         sdna_data = sdna_data[4:]
         data_offset += 4
-        for i, s in enumerate(struct.unpack(self.endian + "H" * len(self.types_by_index), sdna_data[:2 * len(self.types_by_index)])) :
+        for \
+            i, s \
+        in \
+            enumerate \
+              (
+                struct.unpack
+                  (
+                        self.endian
+                    +
+                        "H" * len(self.types_by_index),
+                    sdna_data[:2 * len(self.types_by_index)]
+                  )
+              ) \
+        :
             self.types_by_index[i]["size"] = s
             log.write("sizeof(%s) = %d\n" % (self.types_by_index[i]["name"], self.types_by_index[i]["size"])) # debug
         #end for
@@ -322,7 +385,11 @@ class Blenddata :
             struct_type, nr_fields = struct.unpack(self.endian + "HH", sdna_data[:4])
             sdna_data = sdna_data[4:]
             fields = []
-            for j, f in enumerate(struct.unpack(self.endian + "HH" * nr_fields, sdna_data[:4 * nr_fields])) :
+            for \
+                j, f \
+            in \
+                enumerate(struct.unpack(self.endian + "HH" * nr_fields, sdna_data[:4 * nr_fields])) \
+            :
                 if j % 2 == 0 :
                     field_type = f
                 else :
@@ -344,6 +411,8 @@ class Blenddata :
             assert (t["name"] in primitive_types) <= ("fields" not in t), "primitive type %s must not be struct" % t["name"]
             self.types[t["name"]] = t
         #end for
+        self.link_type = self.types["Link"]
+          # should I bother to check it consists of exactly 2 fields, both of type *Link?
         for k in primitive_types :
             assert k not in self.types or primitive_types[k]["size"] == self.types[k]["size"], "wrong type size for primitive type %s, expected %d, got %d" % (k, primitive_types[k]["size"], self.types[k]["size"])
         #end for
@@ -351,7 +420,7 @@ class Blenddata :
 
     def encode_sdna(self) :
         "returns bytes for an SDNA block representing my defined types."
-        names = {}
+        names = {} # mapping of name strings to indexes
         structs_by_index = []
         for this_struct in self.structs_by_index :
             fields = []
@@ -378,27 +447,26 @@ class Blenddata :
         #end for
         out = io.BytesIO()
         out.write(b"SDNA")
-        out.write(b"NAME" + struct.pack(self.endian + "I", len(names)))
-        offset = 0
-        names = list(sorted(names.keys(), key = lambda n : names[n]))
-        for i in range(0, len(names)) :
-            thisname = names[i].encode("utf-8") + b"\0"
-            out.write(thisname)
-            offset += len(thisname)
+        for \
+            subblock_id, contents \
+        in \
+            (
+                (b"NAME", sorted(names.keys(), key = lambda n : names[n])),
+                (b"TYPE", (thistype["name"] for thistype in self.types_by_index)),
+            ) \
+        :
+            contents = list(contents) # need length
+            out.write(subblock_id + struct.pack(self.endian + "I", len(contents)))
+            offset = 0
+            for thisname in contents :
+                thisname = thisname.encode("utf-8") + b"\0"
+                out.write(thisname)
+                offset += len(thisname)
+            #end for
+            if offset % 4 != 0 :
+                out.write(b"\0" * (4 - offset % 4))
+            #end if
         #end for
-        if offset % 4 != 0 :
-            out.write(b"\0" * (4 - offset % 4))
-        #end if
-        out.write(b"TYPE" + struct.pack(self.endian + "I", len(self.types_by_index)))
-        offset = 0
-        for thistype in self.types_by_index:
-            thisname = thistype["name"].encode("utf-8") + b"\0"
-            out.write(thisname)
-            offset += len(thisname)
-        #end for
-        if offset % 4 != 0 :
-            out.write(b"\0" * (4 - offset % 4))
-        #end if
         out.write(b"TLEN")
         offset = 0
         for thistype in self.types_by_index:
@@ -500,7 +568,7 @@ class Blenddata :
             fd = origfd
             origfd = None
         #end if
-        sig, ptrcode, endiancode, self.version = structread(fd, "7s1s1s3s")
+        sig, ptrcode, endiancode, self.version = structread(fd, "7s1s1s3s") # note not endian-dependent
         assert sig == blender_sig, "unrecognized file header signature %s" % sig
         self.ptrsize = {b"_" : 4, b"-" : 8}[ptrcode]
         self.ptrcode = {b"_" : "L", b"-" : "Q"}[ptrcode]
@@ -510,17 +578,21 @@ class Blenddata :
         self.blocks = []
         self.blocks_by_oldaddress = {}
         self.global_block = None
+        sdna_seen = False
         while True :
             # collect all the blocks
             blockcode, datasize, oldaddr, dna_index, dna_count = \
                 structread(fd, "%s4sI%sII" % (self.endian, self.ptrcode))
-            log.write("blockcode = %s, datasize = %d, oldaddr = 0x%x, dna_index = %d, dna_count = %d\n" % (blockcode, datasize, oldaddr, dna_index, dna_count)) # debug
+            log.write("blockcode at 0x%08x = %s, datasize = %d, oldaddr = 0x%x, dna_index = %d, dna_count = %d\n" % (fd.tell(), blockcode, datasize, oldaddr, dna_index, dna_count)) # debug
             if blockcode == b"DNA1" :
+                assert not sdna_seen, "duplicate SDNA blocks"
                 self.decode_sdna(fd.read(datasize), log)
+                sdna_seen = True
             elif blockcode == b"ENDB" :
                 # file-end marker block
                 break
             else :
+                assert not sdna_seen, "data blocks after SDNA block"
                 new_block = \
                     {
                         "code" : blockcode,
@@ -541,6 +613,7 @@ class Blenddata :
                 self.blocks_by_oldaddress[new_block["oldaddr"]] = new_block
             #end if
         #end while
+        assert sdna_seen, "missing SDNA block"
         fd.close()
         if origfd != None :
             origfd.close()
@@ -570,7 +643,9 @@ class Blenddata :
                 del block["rawdata"]
             #end if
         #end for
+        self.dump_counts(log) # debug
         if openlog != None :
+            openlog.flush()
             openlog.close()
         #end if
         return \
