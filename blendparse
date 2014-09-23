@@ -24,33 +24,171 @@
 #-
 
 import sys
-import struct
+import getopt
 import blendfile
+
+def dict_repr(d) :
+  # ensure dictionary items come out in consistent order
+    if type(d) == dict :
+        result = \
+            (
+                "{"
+            +
+                ", ".join(dict_repr(key) + ": " + dict_repr(d[key]) for key in sorted(d))
+            +
+                "}"
+            )
+    elif type(d) == tuple :
+        result = "(" + ", ".join(dict_repr(item) for item in d) + ")"
+    elif type(d) == list :
+        result = "[" + ", ".join(dict_repr(item) for item in d) + "]"
+    else :
+        result = repr(d)
+    #end if
+    return \
+        result
+#end dict_repr
 
 #+
 # Mainline
 #-
 
-if len(sys.argv) not in (2, 3) :
-    raise RuntimeError("usage: %s blendfile [outfile]" % sys.argv[0])
+opts, args = getopt.getopt \
+  (
+    sys.argv[1:],
+    "",
+    ("debug", "raw"),
+  )
+if len(args) not in (1, 2) :
+    raise getopt.GetoptError("usage: %s blendfile [outfile]" % sys.argv[0])
 #end if
-log = sys.stdout
-blend = blendfile.Blenddata().load(sys.argv[1], keep_rawdata = True, count_refs = True, log = log)
-for i, block in enumerate(blend.blocks) :
-    log.write("block %d(%s)[%s] : %s[%d]\n" % (i, repr(block["code"]), len(block["rawdata"]), block["type"]["name"], block["dna_count"])) # debug
-    if block.get("refs") == 0 :
-        log.write(" - no refs to this block\n")
+debug = False
+use_rawdata = False
+for keyword, value in opts :
+    if keyword == "--debug" :
+        debug = True
+    elif keyword == "--raw" :
+        use_rawdata = True
     #end if
-    for item in block["data"] :
-        log.write(" => " + repr(item) + "\n")
-    #end for
 #end for
-if len(sys.argv) > 2 :
-    outfile = open(sys.argv[2], "wb")
-    outfile.write(blendfile.blender_sig + {4 : b"_", 8 : b"-"}[blend.ptrsize] + {False : b"v", True : b"V"}[blend.big_endian] + b"001")
-    sdna = blend.encode_sdna()
-    outfile.write(struct.pack("%s4sI%sII" % (blend.endian, blend.ptrcode), b"DNA1", len(sdna), 1, 0, 1) + sdna)
-    outfile.write(struct.pack("%s4sI%sII" % (blend.endian, blend.ptrcode), b"ENDB", 0, 1, 0, 1))
-    outfile.flush()
-    outfile.close()
+if debug :
+    log = sys.stdout
+else :
+    log = None
+#end if
+blend = blendfile.Blenddata().load(args[0], keep_rawdata = use_rawdata, count_refs = True, log = log)
+if log != None :
+    for i, block in enumerate(blend.blocks) :
+        if block["decoded"] :
+            log.write("block %d(%s)[%s]@%#x : %s[%d]\n" % (i, repr(block["code"]), len(block.get("rawdata", "")), block["oldaddr"], block["type"]["name"], block["dna_count"])) # debug
+            if block.get("refs") == 0 :
+                log.write(" - no refs to this block\n")
+            #end if
+            for item in block["data"] :
+                log.write(" => " + dict_repr(item) + "\n")
+            #end for
+        #end if
+    #end for
+#end if
+if len(args) > 1 :
+    if False :
+        blend.save(args[1], use_rawdata = use_rawdata, log = log)
+    else :
+        # trying to figure out why Blender crashes, so start with exact
+        # recreation of original file and work back from there
+        remap = {}
+
+        def remap_block(block) :
+          # try fiddling with address fields
+
+            def remap_addr(data, datatype) :
+                result = data # initial assumption
+                if type(datatype) == blendfile.PointerType :
+                    addr = None
+                    if type(data) == blendfile.DanglingPointer :
+                        addr = data.addr
+                    elif type(data) == blendfile.BlockIndex :
+                        addr = data.index + data.offset
+                    #end if
+                    if addr != None :
+                        if addr not in remap :
+                            remap[addr] = len(remap) + 1
+                        #end if
+                        result = blendfile.BlockIndex(remap[addr])
+                    #end if
+                elif type(datatype) == blendfile.FixedArrayType :
+                    if datatype.EltType != blend.types["char"] :
+                        for i in range(len(data)) :
+                            data[i] = remap_addr(data[i], datatype.EltType)
+                        #end for
+                    #end if
+                elif type(datatype) in (blendfile.FixedArrayType, blendfile.MethodType) :
+                    pass
+                elif datatype["name"] in blendfile.primitive_types :
+                    pass
+                elif "fields" in datatype :
+                    for field in datatype["fields"] :
+                        data[field["name"]] = remap_addr \
+                          (
+                            (data.__getitem__, data.get)[datatype == blend.link_type](field["name"]),
+                            field["type"]
+                          )
+                    #end for
+                #end if
+                return \
+                    result
+            #end remap_addr
+
+        #begin remap_block
+            if "data" in block :
+                datatype = blend.structs_by_index[block["dna_index"]]
+                for i in range(len(block["data"])) :
+                    block["data"][i] = remap_addr(block["data"][i], datatype)
+                #end for
+            #end if
+        #end remap_block
+
+        for block in blend.blocks :
+            remap[block["oldaddr"]] = len(remap) + 1
+        #end for
+        for block in blend.blocks :
+            remap_block(block)
+        #end for
+        outfile = open(args[1], "wb")
+        outfile.write \
+          (
+                blendfile.blender_sig
+            +
+                {4 : b"_", 8 : b"-"}[blend.ptrsize]
+            +
+                {False : b"v", True : b"V"}[blend.big_endian]
+            +
+                blend.version
+          )
+        for block in blend.blocks :
+            data = blend.construct_block \
+              (
+                block["code"],
+                remap[block["oldaddr"]],
+                  # also using original oldaddr works
+                block["dna_index"],
+                block["dna_count"],
+                (
+                    lambda : block["rawdata"],
+                    lambda : blend.encode_data(block),
+                )[block["decoded"]]()
+              )
+            outfile.write(data)
+        #end for
+        outfile.write \
+          (
+            blend.construct_block(b"DNA1", 0, 0, 1, blend.encode_sdna())
+          )
+        outfile.write \
+          (
+            blend.construct_block(b"ENDB", 0, 0, 0, b"")
+          )
+        outfile.flush()
+        outfile.close()
+    #end if
 #end if

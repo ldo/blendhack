@@ -127,12 +127,18 @@ class RoutineAddr :
 class BlockIndex :
     "for showing references to other blocks"
 
-    def __init__(self, index) :
+    def __init__(self, index, offset = 0) :
         self.index = index
+        self.offset = offset
     #end __init__
 
     def __repr__(self) :
-        return "*Block[%d]" % self.index
+        return \
+            (
+                ("*Block[%d]" + ("", "%+#x")[self.offset != 0])
+            %
+                ((self.index,) + ((), (self.offset,))[self.offset != 0])
+            )
     #end __repr__
 
 #end BlockIndex
@@ -234,6 +240,41 @@ primitive_types = \
         "void" : {"size" : 0}, # only occurs as pointer object type!
     }
 
+block_code_order = \
+    ( # blocks should be written to file in this order to avoid Blender crashes
+        b"WM\x00\x00", # type wmWindowManager.
+        b"SN\x00\x00", # (newer Blender) type bScreen.
+        b"SR\x00\x00", # (older Blender) type bScreen.
+        b"MC\x00\x00", # type MovieClip.
+        b"MS\x00\x00", # type Mask.
+        b"SC\x00\x00", # type Scene.
+        b"CU\x00\x00", # type Curve.
+        b"MB\x00\x00", # type MetaBall.
+        b"IM\x00\x00", # type Image.
+        b"CA\x00\x00", # type Camera.
+        b"LA\x00\x00", # type Lamp.
+        b"LT\x00\x00", # type Lattice.
+        b"VF\x00\x00", # type VectorFont.
+        b"KE\x00\x00", # type Key (shape key).
+        b"WO\x00\x00", # type World.
+        b"TX\x00\x00", # type Text.
+        b"SK\x00\x00", # type Speaker.
+        b"SO\x00\x00", # type Sound.
+        b"GR\x00\x00", # type Group.
+        b"AC\x00\x00", # type bAction.
+        b"OB\x00\x00", # type Object.
+        b"MA\x00\x00", # type Material.
+        b"TE\x00\x00", # type Tex(ture).
+        b"ME\x00\x00", # type Mesh.
+        b"PA\x00\x00", # type ParticleSettings.
+        b"NT\x00\x00", # type NodeTree.
+        b"BR\x00\x00", # type Brush.
+        b"PY\x00\x00", # type Script (obsolete).
+        b"GD\x00\x00", # type GreasePencil.
+        b"IP\x00\x00", # type Ipo (obsolete, replaced by FCurves).
+        b"LI\x00\x00", # type Library.
+    )
+
 blender_sig = b"BLENDER"
 
 class Blenddata :
@@ -279,13 +320,16 @@ class Blenddata :
 
     # Each block is represented by a dict with the following entries:
     #     "code" -- the four-byte block code
-    #     "data" -- the decoded block data, as an array of elements of the block type
+    #     "data" -- (only if the block contents were decodeable) the decoded block data, as an array of elements of the block type
+    #     "decoded" -- indicates that the block contents were decodeable. False only for special-case blocks
     #     "dna_count" -- the number of array elements in the block
     #     "dna_index" -- the index into structs_by_index of the block type
+    #     "endaddr" -- one past the end of the in-memory addresses spanned by the block
     #     "index" -- the index number of the block, used for less-cluttered display dumps
     #     "oldaddr" -- the saved in-memory address of the block
     #     "rawdata" -- the raw, undecoded data (only kept if keep_rawdata is specified to load)
     #     "refs" -- number of references to this block (optional, only present if count_refs is specified to load)
+    #     "type" -- (only if the block contents were decodeable) -- the reference to the structure type of the block contents
 
     def __init__(self, big_endian = None, pointer_size = None) :
         "args are only important for writing, ignored for reading"
@@ -504,9 +548,25 @@ class Blenddata :
                 if "refs" in the_block :
                     the_block["refs"] += 1
                 #end if
-                result = BlockIndex(the_block["index"]) # less cluttered display
+                # result = BlockIndex(the_block["index"]) # less cluttered display
+                result = BlockIndex(the_block["oldaddr"]) # debug
             else :
-                result = DanglingPointer(oldaddress)
+                i = 0
+                while True :
+                    if i == len(self.blocks) :
+                        result = DanglingPointer(oldaddress)
+                        break
+                    #end if
+                    the_block = self.blocks[i]
+                    if oldaddress >= the_block["oldaddr"] and oldaddress < the_block["endaddr"] :
+                        # I thought some dangling pointers might be pointers offset from the
+                        # start of other blocks, hence this check. However, it never seems
+                        # to succeed.
+                        result = BlockIndex(the_block["oldaddr"], oldaddress - the_block["oldaddr"])
+                        break
+                    #end if
+                    i += 1
+                #end while
             #end if
         elif type(datatype) == FixedArrayType :
             result = []
@@ -555,6 +615,112 @@ class Blenddata :
             result
     #end decode_data
 
+    def encode_data(self, block) :
+        # encodes the specified block contents to raw data and returns it.
+
+        def encode_item(data, datatype) :
+            if type(datatype) == PointerType :
+                # oldaddress isn't actually important
+                if data == None :
+                    data = 0
+                elif type(data) == DanglingPointer :
+                    # data = 0 # causes crashes
+                    if data.addr < 0x100000000 :
+                        data = 0 # doesn't cause crashes!
+                    else :
+                        data = data.addr
+                    #end if
+                elif type(data) == BlockIndex :
+                    data = data.index + data.offset
+                else :
+                    raise AssertionError("decoded pointer value not None, BlockIndex or DanglingPointer")
+                #end if
+                result = struct.pack(self.endian + self.ptrcode, data)
+            elif type(datatype) == FixedArrayType :
+                if type(data) == bytes :
+                    result = data
+                elif type(data) == str :
+                    result = data.encode("utf-8")
+                else :
+                    result = b"".join \
+                      (
+                        encode_item(i, datatype.EltType) for i in data
+                      )
+                #end if
+                if datatype.EltType == self.types["char"] :
+                    # put back any trailing nulls I might have removed
+                    result += b"\0" * (datatype.NrElts - len(result))
+                #end if
+            elif type(datatype) == MethodType :
+                # oldaddress can't possibly be useful
+                result = struct.pack(self.endian + self.ptrcode, 0)
+            elif datatype["name"] in primitive_types :
+                result = struct.pack(self.endian + primitive_types[datatype["name"]]["code"], data)
+            else :
+                assert "fields" in datatype, "non-primitive type %s has no fields" % datatype["name"]
+                result = b""
+                for field in datatype["fields"] :
+                    result += encode_item \
+                      (
+                        (data.__getitem__, data.get)[datatype == self.link_type](field["name"]),
+                        field["type"]
+                      )
+                #end for
+            #end if
+            return \
+                result
+        #end encode_item
+
+    #begin encode_data
+        return \
+            b"".join \
+              (
+                encode_item(i, self.structs_by_index[block["dna_index"]]) for i in block["data"]
+              )
+    #end encode_data
+
+    def construct_block(self, code, oldaddr, dna_index, dna_count, contents) :
+        # prepends a header for the specified block contents and returns the complete block.
+        return \
+            (
+                struct.pack
+                  (
+                    "%s4sI%sII" % (self.endian, self.ptrcode),
+                    code,
+                    len(contents),
+                    oldaddr,
+                    dna_index,
+                    dna_count,
+                  )
+            +
+                contents
+            )
+    #end construct_block
+
+    def dump_counts(self, log) :
+        # debug--dumps some stats about block types.
+        block_codes = {}
+        block_types = {}
+        max_name_length = 0
+        for block in self.blocks :
+            if block["decoded"] :
+                this_code = block["code"]
+                this_type = block["type"]["name"]
+                max_name_length = max(max_name_length, len(this_type))
+                block_codes[this_code] = block_codes.get(this_code, 0) + 1
+                block_types[this_type] = block_types.get(this_type, 0) + 1
+            #end if
+        #end for
+        log.write("\nBlock code counts:\n")
+        for this_code in sorted(block_codes) :
+            log.write("    %-19s %d\n" % (repr(this_code), block_codes[this_code]))
+        #end if
+        log.write("Block type counts:\n")
+        for this_type in sorted(block_types) :
+            log.write("    %%-%ds %%d\n" % max_name_length % (this_type, block_types[this_type]))
+        #end for
+    #end dump_counts
+
     def load(self, filename, keep_rawdata = False, count_refs = False, log = None) :
         "loads the contents of the specified .blend file."
         openlog = None
@@ -587,6 +753,7 @@ class Blenddata :
             blockcode, datasize, oldaddr, dna_index, dna_count = \
                 structread(fd, "%s4sI%sII" % (self.endian, self.ptrcode))
             log.write("blockcode at 0x%08x = %s, datasize = %d, oldaddr = 0x%x, dna_index = %d, dna_count = %d\n" % (fd.tell(), blockcode, datasize, oldaddr, dna_index, dna_count)) # debug
+            # log.write("blockcode = %s, datasize = %d, oldaddr = 0x%x, dna_index = %d, dna_count = %d\n" % (blockcode, datasize, oldaddr, dna_index, dna_count)) # debug
             if blockcode == b"DNA1" :
                 assert not sdna_seen, "duplicate SDNA blocks"
                 self.decode_sdna(fd.read(datasize), log)
@@ -600,6 +767,7 @@ class Blenddata :
                     {
                         "code" : blockcode,
                         "oldaddr" : oldaddr,
+                        "endaddr" : oldaddr + datasize,
                         "dna_index" : dna_index,
                         "dna_count" : dna_count,
                         "rawdata" : fd.read(datasize),
@@ -624,26 +792,35 @@ class Blenddata :
         assert self.global_block != None, "missing GLOB block"
         for i, block in enumerate(self.blocks) :
             block_type = self.structs_by_index[block["dna_index"]]
-            block["type"] = block_type
-            decoded = []
-            for j in range(0, block["dna_count"]) :
-                decoded.append \
-                  (
-                    self.decode_data
+            block["decoded"] = \
+                (
+                    block["code"] not in (b"REND", b"TEST")
+                and
+                    (block_type != self.link_type or len(block["rawdata"]) == block_type["size"])
+                      # there are some blocks of Link type that are too small for the type
+                )
+            if block["decoded"] :
+                block["type"] = block_type
+                decoded = []
+                for j in range(0, block["dna_count"]) :
+                    decoded.append \
                       (
-                        block["rawdata"][j * block_type["size"] : (j + 1) * block_type["size"]],
-                        block_type,
-                        log
+                        self.decode_data
+                          (
+                            block["rawdata"][j * block_type["size"] : (j + 1) * block_type["size"]],
+                            block_type,
+                            log
+                          )
                       )
-                  )
-            #end for
-            leftover = max(len(block["rawdata"]) - block_type["size"] * block["dna_count"], 0)
-            if leftover > 0 :
-                log.write("# ignoring %d bytes at end of block %d\n" % (leftover, i))
-            #end if
-            block["data"] = decoded
-            if not keep_rawdata :
-                del block["rawdata"]
+                #end for
+                leftover = max(len(block["rawdata"]) - block_type["size"] * block["dna_count"], 0)
+                if leftover > 0 :
+                    log.write("# ignoring %d bytes at end of block %d\n" % (leftover, i))
+                #end if
+                block["data"] = decoded
+                if not keep_rawdata :
+                    del block["rawdata"]
+                #end if
             #end if
         #end for
         self.dump_counts(log) # debug
@@ -654,5 +831,185 @@ class Blenddata :
         return \
             self
     #end load
+
+    def save(self, filename, compressed = False, use_rawdata = False, log = None) :
+        "saves the contents into a .blend file."
+
+        referenced = set() # set of blocks that should be written out
+
+        def find_referenced() :
+            # marks all specially-coded blocks needing saving.
+
+            def referenced_action(block) :
+                if block["code"] != b"DATA" :
+                    referenced.add(block["index"])
+                #end if
+                return \
+                    True
+            #end referenced_action
+
+        #begin find_referenced
+            scan_block(self.global_block, referenced_action)
+        #end find_referenced
+
+        def scan_block(block, action) :
+            # invokes action on the specified block, followed by all (indirectly or directly)
+            # referenced blocks.
+
+            scanned = set() # blocks that have already been scanned
+
+            def scan_block_recurse(block, action) :
+                # invokes action on the specified block, followed by all (indirectly or directly)
+                # referenced blocks that haven't already been scanned.
+
+                def check_item(item, itemtype) :
+
+                    def check_scan_ref() :
+                        # assume at most one level of pointer indirection!
+                        if type(item) == BlockIndex :
+                            scan_block_recurse(self.blocks[item.index], action)
+                        #end if
+                    #end check_scan_ref
+
+                    def check_array() :
+                        # debug
+                        if len(item) != itemtype.NrElts :
+                            log.write("array %s has %d elts, expected %d\n" % (repr(item), len(item), itemtype.NrElts))
+                        #end if
+                        #end debug
+                        for i in range(0, itemtype.NrElts) :
+                            check_item(item[i], itemtype.EltType)
+                        #end for
+                    #end check_array
+
+                    def check_struct() :
+                        for field in itemtype["fields"] :
+                            fieldval = (item.__getitem__, item.get)[itemtype == self.link_type](field["name"])
+                            if fieldval != None :
+                                check_item(fieldval, field["type"])
+                            #end if
+                        #end for
+                    #end check_struct
+
+                #begin check_item
+                    # transitively check other referenced blocks that haven't already
+                    # been scanned
+                    if type(itemtype) == PointerType :
+                        check_scan_ref()
+                    elif type(itemtype) == FixedArrayType and itemtype.EltType != self.types["char"] :
+                        check_array()
+                    elif type(itemtype) == dict and "fields" in itemtype :
+                        check_struct()
+                    #end if
+                #end check_item
+
+            #begin scan_block_recurse
+                # debug
+                if block["index"] in scanned :
+                    log.write("already scanned block %d\n" % block["index"])
+                #end debug
+                if block["index"] not in scanned :
+                    if action(block) :
+                        scanned.add(block["index"])
+                        check_item \
+                          (
+                            block["data"],
+                            FixedArrayType
+                              (
+                                self.structs_by_index[block["dna_index"]],
+                                len(block["data"])
+                              )
+                          )
+                    #end if
+                #end if
+            #end scan_block_recurse
+
+        #begin scan_block
+            scan_block_recurse(block, action)
+        #end scan_block
+
+        def save_block(block) :
+            # saves the specified block, followed by all (indirectly or directly)
+            # referenced blocks that haven't already been saved.
+
+            context = \
+                {
+                    "done_coded" : False,
+                }
+
+            def save_action(block) :
+                doit = block["code"] == b"DATA" or not context["done_coded"]
+                if doit :
+                    log.write("save block %d\n" % block["index"]) # debug
+                    if block["code"] != b"DATA" :
+                        context["done_coded"] = True
+                    #end if
+                    outfile.write \
+                      (
+                        self.construct_block
+                          (
+                            block["code"],
+                            block["index"],
+                            block["dna_index"],
+                            block["dna_count"],
+                            (
+                                lambda : self.encode_data(block),
+                                lambda : block["rawdata"],
+                            )[not block["decoded"] or use_rawdata and "rawdata" in block]()
+                          )
+                      )
+                #end if
+                return \
+                    doit
+            #end save_action
+
+        #begin save_block
+            scan_block(block, save_action)
+        #end save_block
+
+    #begin save
+        openlog = None
+        if log == None :
+            openlog = open("/dev/null", "w")
+            log = openlog
+        #end if
+        # self.ptrsize = 4; self.ptrcode = "L" # hack!
+        outfile = (open, gzip.open)[compressed](filename, "wb")
+        outfile.write \
+          (
+                blender_sig
+            +
+                {4 : b"_", 8 : b"-"}[self.ptrsize]
+            +
+                {False : b"v", True : b"V"}[self.big_endian]
+            +
+                self.version
+          )
+        find_referenced()
+        save_block(self.global_block) # global block comes first
+        for code in block_code_order :
+            for block in self.blocks :
+                if block["code"] == code and block["index"] in referenced :
+                    save_block(block)
+                #end if
+            #end for
+        #end for
+        outfile.write \
+          (
+            self.construct_block(b"DNA1", 0, 0, 1, self.encode_sdna())
+          )
+        outfile.write \
+          (
+            self.construct_block(b"ENDB", 0, 0, 0, b"")
+          )
+        outfile.flush()
+        outfile.close()
+        if openlog != None :
+            openlog.flush()
+            openlog.close()
+        #end if
+        return \
+            self
+    #end save
 
 #end Blenddata
