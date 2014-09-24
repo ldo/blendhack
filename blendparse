@@ -108,7 +108,7 @@ if len(args) > 1 :
                     if type(data) == blendfile.DanglingPointer :
                         addr = data.addr
                     elif type(data) == blendfile.BlockIndex :
-                        addr = data.index + data.offset
+                        addr = data.index
                     #end if
                     if addr != None :
                         if addr not in remap :

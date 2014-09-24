@@ -127,18 +127,13 @@ class RoutineAddr :
 class BlockIndex :
     "for showing references to other blocks"
 
-    def __init__(self, index, offset = 0) :
+    def __init__(self, index) :
         self.index = index
-        self.offset = offset
     #end __init__
 
     def __repr__(self) :
         return \
-            (
-                ("*Block[%d]" + ("", "%+#x")[self.offset != 0])
-            %
-                ((self.index,) + ((), (self.offset,))[self.offset != 0])
-            )
+            "*Block[%d]" % self.index
     #end __repr__
 
 #end BlockIndex
@@ -551,22 +546,7 @@ class Blenddata :
                 # result = BlockIndex(the_block["index"]) # less cluttered display
                 result = BlockIndex(the_block["oldaddr"]) # debug
             else :
-                i = 0
-                while True :
-                    if i == len(self.blocks) :
-                        result = DanglingPointer(oldaddress)
-                        break
-                    #end if
-                    the_block = self.blocks[i]
-                    if oldaddress >= the_block["oldaddr"] and oldaddress < the_block["endaddr"] :
-                        # I thought some dangling pointers might be pointers offset from the
-                        # start of other blocks, hence this check. However, it never seems
-                        # to succeed.
-                        result = BlockIndex(the_block["oldaddr"], oldaddress - the_block["oldaddr"])
-                        break
-                    #end if
-                    i += 1
-                #end while
+                result = DanglingPointer(oldaddress)
             #end if
         elif type(datatype) == FixedArrayType :
             result = []
@@ -631,7 +611,7 @@ class Blenddata :
                         data = data.addr
                     #end if
                 elif type(data) == BlockIndex :
-                    data = data.index + data.offset
+                    data = data.index
                 else :
                     raise AssertionError("decoded pointer value not None, BlockIndex or DanglingPointer")
                 #end if
