@@ -124,19 +124,19 @@ class RoutineAddr :
 
 #end RoutineAddr
 
-class BlockIndex :
+class BlockRef :
     "for showing references to other blocks"
 
-    def __init__(self, index) :
-        self.index = index
+    def __init__(self, block) :
+        self.block = block
     #end __init__
 
     def __repr__(self) :
         return \
-            "*Block[%d]" % self.index
+            "*Block[%d]" % self.block["index"]
     #end __repr__
 
-#end BlockIndex
+#end BlockRef
 
 #+
 # Handling of Blender types
@@ -543,8 +543,7 @@ class Blenddata :
                 if "refs" in the_block :
                     the_block["refs"] += 1
                 #end if
-                # result = BlockIndex(the_block["index"]) # less cluttered display
-                result = BlockIndex(the_block["oldaddr"]) # debug
+                result = BlockRef(the_block)
             else :
                 result = DanglingPointer(oldaddress)
             #end if
@@ -595,7 +594,9 @@ class Blenddata :
             result
     #end decode_data
 
-    def encode_data(self, block) :
+    default_encode_ref = lambda block : block["oldaddr"]
+
+    def encode_data(self, block, encode_ref = default_encode_ref) :
         # encodes the specified block contents to raw data and returns it.
 
         def encode_item(data, datatype) :
@@ -604,16 +605,15 @@ class Blenddata :
                 if data == None :
                     data = 0
                 elif type(data) == DanglingPointer :
-                    # data = 0 # causes crashes
-                    if data.addr < 0x100000000 :
-                        data = 0 # doesn't cause crashes!
-                    else :
-                        data = data.addr
-                    #end if
-                elif type(data) == BlockIndex :
-                    data = data.index
+                    data = data.addr
+                      # uniqueness of most values need to be preserved, to keep Blender from
+                      # crashing. Some of these, it seems, can be safely set to 0--in a file
+                      # created by 64-bit Blender, these have addresses within the first 1GB.
+                      # However, to be safe, I just preserve them all.
+                elif type(data) == BlockRef :
+                    data = encode_ref(data.block)
                 else :
-                    raise AssertionError("decoded pointer value not None, BlockIndex or DanglingPointer")
+                    raise AssertionError("decoded pointer value not None, BlockRef or DanglingPointer")
                 #end if
                 result = struct.pack(self.endian + self.ptrcode, data)
             elif type(datatype) == FixedArrayType :
@@ -653,10 +653,13 @@ class Blenddata :
 
     #begin encode_data
         return \
-            b"".join \
-              (
-                encode_item(i, self.structs_by_index[block["dna_index"]]) for i in block["data"]
-              )
+            (
+                lambda : block["rawdata"],
+                lambda : b"".join \
+                  (
+                    encode_item(i, self.structs_by_index[block["dna_index"]]) for i in block["data"]
+                  ),
+            )[block["decoded"]]()
     #end encode_data
 
     def construct_block(self, code, oldaddr, dna_index, dna_count, contents) :
@@ -812,7 +815,7 @@ class Blenddata :
             self
     #end load
 
-    def save(self, filename, compressed = False, use_rawdata = False, log = None) :
+    def save(self, filename, compressed = False, encode_ref = default_encode_ref, use_rawdata = False, log = None) :
         "saves the contents into a .blend file."
 
         referenced = set() # set of blocks that should be written out
@@ -822,7 +825,7 @@ class Blenddata :
 
             def referenced_action(block) :
                 if block["code"] != b"DATA" :
-                    referenced.add(block["index"])
+                    referenced.add(encode_ref(block))
                 #end if
                 return \
                     True
@@ -846,8 +849,8 @@ class Blenddata :
 
                     def check_scan_ref() :
                         # assume at most one level of pointer indirection!
-                        if type(item) == BlockIndex :
-                            scan_block_recurse(self.blocks[item.index], action)
+                        if type(item) == BlockRef :
+                            scan_block_recurse(item.block, action)
                         #end if
                     #end check_scan_ref
 
@@ -885,21 +888,23 @@ class Blenddata :
 
             #begin scan_block_recurse
                 # debug
-                if block["index"] in scanned :
+                if encode_ref(block) in scanned :
                     log.write("already scanned block %d\n" % block["index"])
                 #end debug
-                if block["index"] not in scanned :
+                if encode_ref(block) not in scanned :
                     if action(block) :
-                        scanned.add(block["index"])
-                        check_item \
-                          (
-                            block["data"],
-                            FixedArrayType
+                        scanned.add(encode_ref(block))
+                        if block["decoded"] :
+                            check_item \
                               (
-                                self.structs_by_index[block["dna_index"]],
-                                len(block["data"])
+                                block["data"],
+                                FixedArrayType
+                                  (
+                                    self.structs_by_index[block["dna_index"]],
+                                    len(block["data"])
+                                  )
                               )
-                          )
+                        #end if
                     #end if
                 #end if
             #end scan_block_recurse
@@ -929,11 +934,11 @@ class Blenddata :
                         self.construct_block
                           (
                             block["code"],
-                            block["index"],
+                            encode_ref(block),
                             block["dna_index"],
                             block["dna_count"],
                             (
-                                lambda : self.encode_data(block),
+                                lambda : self.encode_data(block, encode_ref = encode_ref),
                                 lambda : block["rawdata"],
                             )[not block["decoded"] or use_rawdata and "rawdata" in block]()
                           )
@@ -969,7 +974,7 @@ class Blenddata :
         save_block(self.global_block) # global block comes first
         for code in block_code_order :
             for block in self.blocks :
-                if block["code"] == code and block["index"] in referenced :
+                if block["code"] == code and encode_ref(block) in referenced :
                     save_block(block)
                 #end if
             #end for

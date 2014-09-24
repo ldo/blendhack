@@ -91,69 +91,68 @@ if log != None :
     #end for
 #end if
 if len(args) > 1 :
-    if False :
-        blend.save(args[1], use_rawdata = use_rawdata, log = log)
+    remap = {}
+      # try fiddling with address fields
+    def remap_addr(addr) :
+        if addr not in remap :
+            remap[addr] = len(remap) + 1
+        #end if
+        return \
+            remap[addr]
+    #end remap_addr
+
+    def remap_block(block) :
+
+        def remap_refs(data, datatype) :
+            result = data # initial assumption
+            if type(datatype) == blendfile.PointerType :
+                if type(data) == blendfile.DanglingPointer :
+                    data.addr = remap_addr(data.addr)
+                elif type(data) == blendfile.BlockRef :
+                    data.block["index"] = remap_addr(data.block["index"])
+                #end if
+            elif type(datatype) == blendfile.FixedArrayType :
+                if datatype.EltType != blend.types["char"] :
+                    for i in range(len(data)) :
+                        remap_refs(data[i], datatype.EltType)
+                    #end for
+                #end if
+            elif type(datatype) == blendfile.MethodType :
+                pass
+            elif datatype["name"] in blendfile.primitive_types :
+                pass
+            elif "fields" in datatype :
+                for field in datatype["fields"] :
+                    remap_refs \
+                      (
+                        (data.__getitem__, data.get)[datatype == blend.link_type](field["name"]),
+                        field["type"]
+                      )
+                #end for
+            #end if
+        #end remap_refs
+
+    #begin remap_block
+        if "data" in block :
+            datatype = blend.structs_by_index[block["dna_index"]]
+            for i in range(len(block["data"])) :
+                remap_refs(block["data"][i], datatype)
+            #end for
+        #end if
+    #end remap_block
+
+    for block in blend.blocks :
+        remap_addr(block["oldaddr"])
+    #end for
+    for block in blend.blocks :
+        remap_block(block)
+    #end for
+
+    if True :
+        blend.save(args[1], use_rawdata = use_rawdata, encode_ref = lambda block : block["index"], log = log)
     else :
         # trying to figure out why Blender crashes, so start with exact
         # recreation of original file and work back from there
-        remap = {}
-
-        def remap_block(block) :
-          # try fiddling with address fields
-
-            def remap_addr(data, datatype) :
-                result = data # initial assumption
-                if type(datatype) == blendfile.PointerType :
-                    addr = None
-                    if type(data) == blendfile.DanglingPointer :
-                        addr = data.addr
-                    elif type(data) == blendfile.BlockIndex :
-                        addr = data.index
-                    #end if
-                    if addr != None :
-                        if addr not in remap :
-                            remap[addr] = len(remap) + 1
-                        #end if
-                        result = blendfile.BlockIndex(remap[addr])
-                    #end if
-                elif type(datatype) == blendfile.FixedArrayType :
-                    if datatype.EltType != blend.types["char"] :
-                        for i in range(len(data)) :
-                            data[i] = remap_addr(data[i], datatype.EltType)
-                        #end for
-                    #end if
-                elif type(datatype) in (blendfile.FixedArrayType, blendfile.MethodType) :
-                    pass
-                elif datatype["name"] in blendfile.primitive_types :
-                    pass
-                elif "fields" in datatype :
-                    for field in datatype["fields"] :
-                        data[field["name"]] = remap_addr \
-                          (
-                            (data.__getitem__, data.get)[datatype == blend.link_type](field["name"]),
-                            field["type"]
-                          )
-                    #end for
-                #end if
-                return \
-                    result
-            #end remap_addr
-
-        #begin remap_block
-            if "data" in block :
-                datatype = blend.structs_by_index[block["dna_index"]]
-                for i in range(len(block["data"])) :
-                    block["data"][i] = remap_addr(block["data"][i], datatype)
-                #end for
-            #end if
-        #end remap_block
-
-        for block in blend.blocks :
-            remap[block["oldaddr"]] = len(remap) + 1
-        #end for
-        for block in blend.blocks :
-            remap_block(block)
-        #end for
         outfile = open(args[1], "wb")
         outfile.write \
           (
