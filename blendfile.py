@@ -380,10 +380,10 @@ class Blenddata :
         :
             assert len(sdna_data) >= 8, "premature end of DNA block"
             assert expect_id == sdna_data[:4], "expecting %s sub-block in DNA block" % expect_id
-            nr_names = struct.unpack(self.endian + "I", sdna_data[4:8])[0]
+            nr_items = struct.unpack(self.endian + "I", sdna_data[4:8])[0]
             sdna_data = sdna_data[8:]
             data_offset += 8
-            for i in range(0, nr_names) :
+            for i in range(nr_items) :
                 str_end = sdna_data.index(b"\0")
                 collect.append(sdna_data[:str_end].decode("utf-8"))
                 log.write("name[%d] = %s\n" % (i, repr(collect[i]))) # debug
@@ -395,7 +395,7 @@ class Blenddata :
                 data_offset += 4 - data_offset % 4
             #end if
         #end for
-        for i in range(0, len(self.types_by_index)) :
+        for i in range(len(self.types_by_index)) :
             self.types_by_index[i] = {"name" : self.types_by_index[i], "index" : i}
         #end for
         assert sdna_data[:4] == b"TLEN", "expecting TLEN sub-block in DNA block"
@@ -428,7 +428,7 @@ class Blenddata :
         nr_structs = struct.unpack(self.endian + "I", sdna_data[4:8])[0]
         sdna_data = sdna_data[8:]
         data_offset += 8
-        for i in range(0, nr_structs) :
+        for i in range(nr_structs) :
             struct_type, nr_fields = struct.unpack(self.endian + "HH", sdna_data[:4])
             sdna_data = sdna_data[4:]
             fields = []
@@ -572,7 +572,7 @@ class Blenddata :
             result = []
             elt_size = self.type_size(datatype.EltType)
             assert len(rawdata) == elt_size * datatype.NrElts
-            for i in range(0, datatype.NrElts) :
+            for i in range(datatype.NrElts) :
                 result.append(self.decode_data(rawdata[i * elt_size : (i + 1) * elt_size], datatype.EltType, log))
             #end for
             if datatype.EltType == self.types["char"] :
@@ -802,7 +802,7 @@ class Blenddata :
             if block["decoded"] :
                 block["type"] = block_type
                 decoded = []
-                for j in range(0, block["dna_count"]) :
+                for j in range(block["dna_count"]) :
                     decoded.append \
                       (
                         self.decode_data
@@ -877,7 +877,7 @@ class Blenddata :
                             log.write("array %s has %d elts, expected %d\n" % (repr(item), len(item), itemtype.NrElts))
                         #end if
                         #end debug
-                        for i in range(0, itemtype.NrElts) :
+                        for i in range(itemtype.NrElts) :
                             check_item(item[i], itemtype.EltType)
                         #end for
                     #end check_array
