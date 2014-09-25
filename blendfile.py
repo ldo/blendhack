@@ -6,7 +6,8 @@
 #     The Blender source code, doc/blender_file_format subdirectory
 #
 # Further info not mentioned above:
-#     Most blocks have code "DATA", however a few have special codes:
+#
+# Most blocks have code "DATA", however a few have special codes:
 #     * always 1 block with code "GLOB", type FileGlobal
 #     * 1 block with code "REND", type Link, but contents are actually the RenderInfo
 #       struct in source/blender/blenloader/intern/writefile.c in the Blender source.
@@ -49,20 +50,24 @@
 #     * possibly one block with code "USER" (only present in startup.blend),
 #       followed by DATA blocks containing custom keymaps, addon properties, autoexec paths
 #       and style definitions.
-#     * always 1 block with code "DNA1", containing the "structure DNA" (type definitions).
+#     * always 1 block with code "DNA1", containing the "structure DNA" (struct type definitions).
 #       Must be the last block, except for "ENDB"; Blender actually stops reading the file
-#       when it has processed this block.
-#     * always 1 block with code "ENDB", marking the end of the file.
-#     Also several "DATA" blocks specify a type of Link (dna_index = 0), which is 2 * ptrsize
-#     bytes, but are smaller than this, or even way larger.
-#     The above 2-letter codes may be found in source file source/blender/makesdna/DNA_ID.h.
-#     The significance of the code always ending with two zero bytes is that these blocks
-#     have user-visible names: these names are required to be unique among blocks of the
-#     same type, and are prefixed internally with the two initial bytes of the block code,
-#     allowing two blocks with different codes to have the same user-visible name.
+#       when it has processed this block. The first type defined here, with index 0, is
+#       always of type Link.
+#     * always 1 block with code "ENDB", marking the end of the file. This may not be
+#       a complete block; the dna_index and dna_count fields might be missing.
+#
+# Also several "DATA" blocks specify a type of Link (dna_index = 0), which is 2 * ptrsize
+# bytes, but are not actually of this type, and can be smaller than this, or even way larger.
+#
+# The above 2-letter codes may be found in source file source/blender/makesdna/DNA_ID.h.
+# The significance of the code always ending with two zero bytes is that these blocks
+# have user-visible names: these names are required to be unique among blocks of the
+# same type, and are prefixed internally with the two initial bytes of the block code,
+# allowing two blocks with different codes to have the same user-visible name.
 #
 # The GLOB block is the root of a directed acyclic graph by which all other blocks
-# (except the REND and TEST blocks, and of course the DNA1 and ENDB blocks) are directly
+# (except the REND, TEST and USER blocks, and of course the DNA1 and ENDB blocks) are directly
 # or indirectly referenced; UI elements are linked through its curscreen field (pointing
 # to a bScreen structure), and scene/model data is linked through its curscene field
 # (pointing to a Scene structure). bScreens and Scenes are each linked into their own
@@ -876,7 +881,7 @@ class Blenddata :
             #end if
             datasize, oldaddr, dna_index, dna_count = \
                 structread(fd, "%sI%sII" % (self.endian, self.ptrcode))
-            log.write("blockcode at 0x%08x = %s, datasize = %d, oldaddr = 0x%x, dna_index = %d, dna_count = %d\n" % (fd.tell(), blockcode, datasize, oldaddr, dna_index, dna_count)) # debug
+            log.write("blockcode %d at 0x%08x = %s, datasize = %d, oldaddr = 0x%x, dna_index = %d, dna_count = %d\n" % (len(self.blocks), fd.tell(), blockcode, datasize, oldaddr, dna_index, dna_count)) # debug
             if blockcode == b"DNA1" :
                 assert not sdna_seen, "duplicate SDNA blocks"
                 self.decode_sdna(fd.read(datasize), log)
@@ -919,6 +924,9 @@ class Blenddata :
                     (block_type != self.link_type or len(block["rawdata"]) == block_type["size"])
                       # there are some blocks of Link type that are too small for the type
                 )
+            if not block["decoded"] : # debug
+                log.write("not decoding block %d\n" % block["index"]) # debug
+            #end if
             if block["decoded"] :
                 block["type"] = block_type
                 decoded = []
