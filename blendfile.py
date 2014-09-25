@@ -960,16 +960,14 @@ class Blenddata :
             # saves the specified block, followed by all (indirectly or directly)
             # referenced blocks that haven't already been saved.
 
-            context = \
-                {
-                    "done_coded" : False,
-                }
+            done_coded = False
 
             def save_action(block) :
-                doit = block["code"] == b"DATA" or not context["done_coded"]
+                nonlocal done_coded
+                doit = block["code"] == b"DATA" or not done_coded
                 if doit :
                     if block["code"] != b"DATA" :
-                        context["done_coded"] = True
+                        done_coded = True
                     #end if
                     outfile.write \
                       (
