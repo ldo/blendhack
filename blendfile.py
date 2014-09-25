@@ -988,25 +988,31 @@ class Blenddata :
       ) :
         "saves the contents into a .blend file."
 
-        referenced = set() # set of blocks that should be written out
+        ordered_save = True # see if I really need to be this strict--yes I do
 
-        def find_referenced() :
-            # marks all specially-coded blocks needing saving.
+        if ordered_save :
 
-            def referenced_action(block) :
-                if block["code"] != b"DATA" :
-                    referenced.add(encode_ref(block))
+            referenced = set() # set of blocks that should be written out
+
+            def find_referenced() :
+                # marks all specially-coded blocks needing saving.
+
+                def referenced_action(block) :
+                    if block["code"] != b"DATA" :
+                        referenced.add(encode_ref(block))
+                    #end if
+                    return \
+                        True
+                #end referenced_action
+
+            #begin find_referenced
+                scan_block(self.global_block, referenced_action)
+                if self.user_prefs_block != None :
+                    scan_block(self.user_prefs_block, referenced_action)
                 #end if
-                return \
-                    True
-            #end referenced_action
+            #end find_referenced
 
-        #begin find_referenced
-            scan_block(self.global_block, referenced_action)
-            if self.user_prefs_block != None :
-                scan_block(self.user_prefs_block, referenced_action)
-            #end if
-        #end find_referenced
+        #end if
 
         def scan_block(block, action) :
             # invokes action on the specified block, followed by all (indirectly or directly)
@@ -1093,41 +1099,80 @@ class Blenddata :
             scan_block_recurse(block, action)
         #end scan_block
 
-        def save_block(block) :
-            # saves the specified block, followed by all (indirectly or directly)
-            # referenced blocks that haven't already been saved.
+        if ordered_save :
 
-            done_coded = False
+            def save_block(block) :
+                # saves the specified block, followed by all (indirectly or directly)
+                # referenced blocks that haven't already been saved.
 
-            def save_action(block) :
-                nonlocal done_coded
-                doit = block["code"] == b"DATA" or not done_coded
-                if doit :
-                    if block["code"] != b"DATA" :
-                        done_coded = True
-                    #end if
-                    outfile.write \
-                      (
-                        self.construct_block
+                done_coded = False
+
+                def save_action(block) :
+                    nonlocal done_coded
+                    doit = block["code"] == b"DATA" or not done_coded
+                    if doit :
+                        if block["code"] != b"DATA" :
+                            done_coded = True
+                        #end if
+                        outfile.write \
                           (
-                            block["code"],
-                            encode_ref(block),
-                            block["dna_index"],
-                            block["dna_count"],
-                            (
-                                lambda : self.encode_data(block, encode_ref = encode_ref, log = log),
-                                lambda : block["rawdata"],
-                            )[not block["decoded"] or use_rawdata and "rawdata" in block]()
+                            self.construct_block
+                              (
+                                block["code"],
+                                encode_ref(block),
+                                block["dna_index"],
+                                block["dna_count"],
+                                (
+                                    lambda : self.encode_data(block, encode_ref = encode_ref, log = log),
+                                    lambda : block["rawdata"],
+                                )[not block["decoded"] or use_rawdata and "rawdata" in block]()
+                              )
                           )
-                      )
-                #end if
-                return \
-                    doit
-            #end save_action
+                    #end if
+                    return \
+                        doit
+                #end save_action
 
-        #begin save_block
-            scan_block(block, save_action)
-        #end save_block
+            #begin save_block
+                scan_block(block, save_action)
+            #end save_block
+
+        else :
+
+            saved = set()
+
+            def save_block(block) :
+                # saves the specified block, followed by all (indirectly or directly)
+                # referenced blocks that haven't already been saved.
+
+                def save_action(block) :
+                    block_ref = encode_ref(block)
+                    if block_ref not in saved :
+                        saved.add(block_ref)
+                        outfile.write \
+                          (
+                            self.construct_block
+                              (
+                                block["code"],
+                                encode_ref(block),
+                                block["dna_index"],
+                                block["dna_count"],
+                                (
+                                    lambda : self.encode_data(block, encode_ref = encode_ref, log = log),
+                                    lambda : block["rawdata"],
+                                )[not block["decoded"] or use_rawdata and "rawdata" in block]()
+                              )
+                          )
+                    #end if
+                    return \
+                        True
+                #end save_action
+
+            #begin save_block
+                scan_block(block, save_action)
+            #end save_block
+
+        #end if
 
     #begin save
         openlog = None
@@ -1154,21 +1199,25 @@ class Blenddata :
             +
                 self.version
           )
-        find_referenced()
+        if ordered_save :
+            find_referenced()
+        #end if
         if self.renderinfo_block != None :
             save_block(self.renderinfo_block)
         #end if
         if self.thumbnail_block != None :
             save_block(self.thumbnail_block)
         #end if
-        save_block(self.global_block) # global block comes first
-        for code in block_code_order :
-            for block in self.blocks :
-                if block["code"] == code and encode_ref(block) in referenced :
-                    save_block(block)
-                #end if
+        save_block(self.global_block)
+        if ordered_save :
+            for code in block_code_order :
+                for block in self.blocks :
+                    if block["code"] == code and encode_ref(block) in referenced :
+                        save_block(block)
+                    #end if
+                #end for
             #end for
-        #end for
+        #end if
         if self.user_prefs_block != None :
             save_block(self.user_prefs_block)
         #end if
