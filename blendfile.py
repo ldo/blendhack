@@ -389,7 +389,6 @@ class Blenddata :
             for t in self.types_by_index :
                 missed_this = False
                 if "fields" in t and t["name"] not in alignments :
-                    do_detail = t["name"] == "ScrArea" # debug
                     struct_size = 0
                     struct_align = 1
                     for field in t["fields"] :
@@ -406,15 +405,9 @@ class Blenddata :
                         # field_align = self.type_align(field["type"], alignments) # debug
                         try : # debug
                             field_align = self.type_align(field["type"], alignments)
-                            if do_detail :
-                                if log != None :
-                                    log.write("type %s(%s) align %d\n" % (type_name(field["type"]), type(type_name(field["type"])), field_align)) # debug
-                                #end if
-                            #end if
                         except AssertionError :
                             raise RuntimeError("couldn't get alignment for %s.%s : %s" % (t["name"], field["name"], field["type"])) # debug
                         #end try
-                        if do_detail : log.write("%s.%s : %s offset %d size %d align %d\n" % (t["name"], field["name"], type_name(field["type"]), struct_size, field_size, field_align)) # debug
                         struct_align = max(struct_align, field_align)
                         if struct_size % field_align != 0 :
                             if log != None :
