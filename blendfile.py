@@ -388,8 +388,6 @@ class Blenddata :
         alignments = {}
         while True :
             missed_one = False
-            resolved_count = 0 # debug
-            missed_count = 0 # debug
             for t in self.types_by_index :
                 missed_this = False
                 if "fields" in t and t["name"] not in alignments :
@@ -402,28 +400,18 @@ class Blenddata :
                             elt_type = elt_type.EltType
                         #end if
                         if type(elt_type) == dict and "fields" in elt_type and elt_type["name"] not in alignments :
-                            log.write("unresolved %s.%s\n" % (t["name"], field["name"])) # debug
                             missed_this = True
                             break
                         #end if
-                        # field_align = self.type_align(field["type"], alignments) # debug
-                        try : # debug
-                            field_align = self.type_align(field["type"], alignments)
-                        except AssertionError :
-                            raise RuntimeError("couldn't get alignment for %s.%s : %s" % (t["name"], field["name"], field["type"])) # debug
-                        #end try
+                        field_align = self.type_align(field["type"])
                         struct_align = max(struct_align, field_align)
                         if struct_size % field_align != 0 :
-                            if log != None :
-                                log.write("%s: align %s from %d by %d\n" % (t["name"], field["name"], struct_size, field_align - struct_size % field_align)) # debug
-                            #end if
                             struct_size += field_align - struct_size % field_align
                         #end if
                         struct_size += field_size
                     #end for
                     if missed_this :
                         missed_one = True
-                        missed_count += 1 # debug
                         continue
                     #end if
                     if compute_sizes :
