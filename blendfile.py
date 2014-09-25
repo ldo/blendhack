@@ -363,18 +363,18 @@ class Blenddata :
             result
     #end type_size
 
-    def type_align(self, of_type, alignments) :
+    def type_align(self, of_type) :
         if type(of_type) == PointerType :
             result = self.ptrsize
         elif type(of_type) == FixedArrayType :
-            result = self.type_align(of_type.EltType, alignments)
+            result = self.type_align(of_type.EltType)
         elif type(of_type) == MethodType :
             result = self.ptrsize
         elif of_type["name"] in primitive_types :
             result = max(of_type["size"], 1)
         else :
-            assert of_type["name"] in alignments, "type %s has no alignment" % of_type["name"]
-            result = alignments[of_type["name"]]
+            assert of_type["name"] in self.alignments, "type %s has no alignment" % of_type["name"]
+            result = self.alignments[of_type["name"]]
         #end if
         return \
             result
@@ -385,12 +385,12 @@ class Blenddata :
         # their sizes accordingly, else checks that they match what is computed.
         # Checking alignments on load is helpful to ensure that I can generate
         # correct structures on save.
-        alignments = {}
+        self.alignments = {}
         while True :
             missed_one = False
             for t in self.types_by_index :
                 missed_this = False
-                if "fields" in t and t["name"] not in alignments :
+                if "fields" in t and t["name"] not in self.alignments :
                     struct_size = 0
                     struct_align = 1
                     for field in t["fields"] :
@@ -399,7 +399,7 @@ class Blenddata :
                         if type(elt_type) == FixedArrayType :
                             elt_type = elt_type.EltType
                         #end if
-                        if type(elt_type) == dict and "fields" in elt_type and elt_type["name"] not in alignments :
+                        if type(elt_type) == dict and "fields" in elt_type and elt_type["name"] not in self.alignments :
                             missed_this = True
                             break
                         #end if
@@ -419,17 +419,12 @@ class Blenddata :
                     else :
                         assert struct_size == t["size"], "size mismatch for struct %s, calc’d %d, got %d" % (t["name"], struct_size, t["size"])
                     #end if
-                    log.write("alignment for %s = %d\n" % (t["name"], struct_align)) # debug
-                    alignments[t["name"]] = struct_align
-                    resolved_count += 1 # debug
+                    self.alignments[t["name"]] = struct_align
                 #end if
             #end for
-            log.write("resolved %d, missed %d\n" % (resolved_count, missed_count)) # debug
             if not missed_one :
                 break
         #end while
-        return \
-            alignments
     #end compute_alignments
 
     def decode_sdna(self, sdna_data, log) :
@@ -656,17 +651,25 @@ class Blenddata :
         else :
             assert "fields" in datatype, "non-primitive type %s has no fields" % datatype["name"]
             result = {}
+            field_offset = 0
             for field in datatype["fields"] :
                 field_size = self.type_size(field["type"])
-                if len(rawdata) < field_size :
-                    log.write("# need at least %d bytes for %s.%s, only got %d\n" % (field_size, datatype["name"], field["name"], len(rawdata)))
-                    rawdata = b"" # ignore rest
+                field_align = self.type_align(field["type"])
+                if field_offset % field_align != 0 :
+                    if log != None :
+                        log.write("decode %s: align %s from %d by %d\n" % (datatype["name"], field["name"], field_offset, field_align - field_offset % field_align)) # debug
+                    #end if
+                    field_offset += field_align - field_offset % field_align
+                #end if
+                if field_offset + field_size > len(rawdata) :
+                    log.write("# need at least %d bytes for %s.%s, only got %d\n" % (field_size, datatype["name"], field["name"], len(rawdata) - field_offset))
+                    field_offset = len(rawdata) # ignore rest
                     break
                 #end if
-                result[field["name"]] = self.decode_data(rawdata[:field_size], field["type"], log)
-                rawdata = rawdata[field_size:]
+                result[field["name"]] = self.decode_data(rawdata[field_offset : field_offset + field_size], field["type"], log)
+                field_offset += field_size
             #end for
-            assert len(rawdata) == 0, "leftover data after decoding %s struct" % datatype["name"]
+            assert field_offset == len(rawdata), "leftover data after decoding %s struct" % datatype["name"]
         #end if
         return \
             result
@@ -674,7 +677,7 @@ class Blenddata :
 
     default_encode_ref = lambda block : block["oldaddr"]
 
-    def encode_data(self, block, encode_ref = default_encode_ref) :
+    def encode_data(self, block, encode_ref = default_encode_ref, log = None) :
         # encodes the specified block contents to raw data and returns it.
 
         def encode_item(data, datatype) :
@@ -718,6 +721,13 @@ class Blenddata :
                 assert "fields" in datatype, "non-primitive type %s has no fields" % datatype["name"]
                 result = b""
                 for field in datatype["fields"] :
+                    field_align = self.type_align(field["type"])
+                    if len(result) % field_align != 0 :
+                        if log != None :
+                            log.write("encode %s: align %s from %d by %d\n" % (datatype["name"], field["name"], len(result), field_align - len(result) % field_align)) # debug
+                        #end if
+                        result += bytes(field_align - len(result) % field_align)
+                    #end if
                     result += encode_item \
                       (
                         (data.__getitem__, data.get)[datatype == self.link_type](field["name"]),
@@ -858,7 +868,10 @@ class Blenddata :
         sdna_seen = False
         while True :
             # collect all the blocks
-            blockcode = fd.read(4)
+            blockcode = b"".join(structread(fd, "%s4c" % self.endian))
+            if blockcode[:2] == b"\x00\x00" :
+                blockcode = blockcode[2:] + blockcode[:2]
+            #end if
             if blockcode == b"ENDB" :
                 # file-end marker block
                 # don't try reading rest of block, because it might be truncated in some files
@@ -1084,7 +1097,7 @@ class Blenddata :
                             block["dna_index"],
                             block["dna_count"],
                             (
-                                lambda : self.encode_data(block, encode_ref = encode_ref),
+                                lambda : self.encode_data(block, encode_ref = encode_ref, log = log),
                                 lambda : block["rawdata"],
                             )[not block["decoded"] or use_rawdata and "rawdata" in block]()
                           )
