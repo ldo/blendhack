@@ -375,10 +375,10 @@ class Blenddata :
         :
             assert len(sdna_data) >= 8, "premature end of DNA block"
             assert expect_id == sdna_data[:4], "expecting %s sub-block in DNA block" % expect_id
-            nr_items = struct.unpack(self.endian + "I", sdna_data[4:8])[0]
+            nr_names = struct.unpack(self.endian + "I", sdna_data[4:8])[0]
             sdna_data = sdna_data[8:]
             data_offset += 8
-            for i in range(nr_items) :
+            for i in range(nr_names) :
                 str_end = sdna_data.index(b"\0")
                 collect.append(sdna_data[:str_end].decode("utf-8"))
                 log.write("name[%d] = %s\n" % (i, repr(collect[i]))) # debug
