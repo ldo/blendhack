@@ -301,12 +301,18 @@ class Blenddata :
     #         code to use to struct.unpack to decode a pointer field
     #     ptrsize --
     #         size in bytes of an address according to version of Blender which created the file
+    #     renderinfo_block --
+    #         "REND" block, if any
     #     structs_by_index --
     #         struct type definitions collected from Structure DNA block, indexed by number
+    #     thumbnail_block --
+    #         "TEST" block, if any
     #     types --
     #         type definitions collected from Structure DNA block, indexed by name
     #     types_by_index
     #         type definitions collected from Structure DNA block, indexed by number
+    #     user_prefs_block --
+    #         "USER" block, if any
     #     version --
     #         3-character version code from file header
 
@@ -865,6 +871,9 @@ class Blenddata :
         self.blocks = []
         self.blocks_by_oldaddress = {}
         self.global_block = None
+        self.renderinfo_block = None
+        self.thumbnail_block = None
+        self.user_prefs_block = None
         sdna_seen = False
         while True :
             # collect all the blocks
@@ -902,6 +911,12 @@ class Blenddata :
                 if blockcode == b"GLOB" :
                     assert self.global_block == None, "multiple GLOB blocks found"
                     self.global_block = new_block
+                elif blockcode == b"REND" :
+                    self.renderinfo_block = new_block
+                elif blockcode == b"TEST" :
+                    self.thumbnail_block = new_block
+                elif blockcode == b"USER" :
+                    self.user_prefs_block = new_block
                 #end if
                 self.blocks.append(new_block)
                 self.blocks_by_oldaddress[new_block["oldaddr"]] = new_block
@@ -988,6 +1003,9 @@ class Blenddata :
 
         #begin find_referenced
             scan_block(self.global_block, referenced_action)
+            if self.user_prefs_block != None :
+                scan_block(self.user_prefs_block, referenced_action)
+            #end if
         #end find_referenced
 
         def scan_block(block, action) :
@@ -1137,6 +1155,12 @@ class Blenddata :
                 self.version
           )
         find_referenced()
+        if self.renderinfo_block != None :
+            save_block(self.renderinfo_block)
+        #end if
+        if self.thumbnail_block != None :
+            save_block(self.thumbnail_block)
+        #end if
         save_block(self.global_block) # global block comes first
         for code in block_code_order :
             for block in self.blocks :
@@ -1145,6 +1169,9 @@ class Blenddata :
                 #end if
             #end for
         #end for
+        if self.user_prefs_block != None :
+            save_block(self.user_prefs_block)
+        #end if
         outfile.write \
           (
             self.construct_block(b"DNA1", 0, 0, 1, self.encode_sdna())
