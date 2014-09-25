@@ -934,10 +934,6 @@ class Blenddata :
                 #end check_item
 
             #begin scan_block_recurse
-                # debug
-                if encode_ref(block) in scanned :
-                    log.write("already scanned block %d\n" % block["index"])
-                #end debug
                 if encode_ref(block) not in scanned :
                     if action(block) :
                         scanned.add(encode_ref(block))
@@ -972,7 +968,6 @@ class Blenddata :
             def save_action(block) :
                 doit = block["code"] == b"DATA" or not context["done_coded"]
                 if doit :
-                    log.write("save block %d\n" % block["index"]) # debug
                     if block["code"] != b"DATA" :
                         context["done_coded"] = True
                     #end if
