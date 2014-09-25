@@ -1095,13 +1095,14 @@ class Blenddata :
 
         def save_block(block) :
             # saves the specified block, followed by all (indirectly or directly)
-            # referenced blocks that haven't already been saved.
+            # referenced DATA blocks that haven't already been saved.
 
             done_coded = False
 
             def save_action(block) :
                 nonlocal done_coded
                 doit = block["code"] == b"DATA" or not done_coded
+                  # stop at next non-DATA block
                 if doit :
                     if block["code"] != b"DATA" :
                         done_coded = True
