@@ -179,6 +179,7 @@ def parse_field_type(field_name, field_type) :
         field_name, field_type = parse_field_type(field_name[2:-3], MethodType(field_type))
     elif field_name[:2] == "(*" and field_name[-7:] == ")(void)" :
         field_name, field_type = parse_field_type(field_name[2:-7], MethodType(field_type))
+          # note I don't remember whether I saw "(void)" or "()"
     else :
         indexstart = field_name.rfind("[")
         if indexstart >= 0 :
