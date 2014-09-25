@@ -49,6 +49,8 @@ def dict_repr(d) :
         result
 #end dict_repr
 
+sys.setrecursionlimit(10000) # needed for saving complex .blend files
+
 #+
 # Mainline
 #-
@@ -154,54 +156,13 @@ if len(args) > 1 :
         remap_block(block)
     #end for
 
-    if True :
-        blend.save \
-          (
-            filename = args[1],
-            bit64 = bit64,
-            big_endian = big_endian,
-            encode_ref = lambda block : block["index"],
-            use_rawdata = use_rawdata,
-            log = log,
-          )
-    else :
-        # trying to figure out why Blender crashes, so start with exact
-        # recreation of original file and work back from there
-        outfile = open(args[1], "wb")
-        outfile.write \
-          (
-                blendfile.blender_sig
-            +
-                {4 : b"_", 8 : b"-"}[blend.ptrsize]
-            +
-                {False : b"v", True : b"V"}[blend.big_endian]
-            +
-                blend.version
-          )
-        for block in blend.blocks :
-            data = blend.construct_block \
-              (
-                block["code"],
-                remap[block["oldaddr"]],
-                  # also using original oldaddr works
-                block["dna_index"],
-                block["dna_count"],
-                (
-                    lambda : block["rawdata"],
-                    lambda : blend.encode_data(block),
-                )[block["decoded"]]()
-              )
-            outfile.write(data)
-        #end for
-        outfile.write \
-          (
-            blend.construct_block(b"DNA1", 0, 0, 1, blend.encode_sdna())
-          )
-        outfile.write \
-          (
-            blend.construct_block(b"ENDB", 0, 0, 0, b"")
-          )
-        outfile.flush()
-        outfile.close()
-    #end if
+    blend.save \
+      (
+        filename = args[1],
+        bit64 = bit64,
+        big_endian = big_endian,
+        encode_ref = lambda block : block["index"],
+        use_rawdata = use_rawdata,
+        log = log,
+      )
 #end if

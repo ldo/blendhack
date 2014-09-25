@@ -413,7 +413,7 @@ class Blenddata :
                         struct_align = max(struct_align, field_align)
                         if struct_size % field_align != 0 :
                             if log != None :
-                                log.write("%s: align %s from %d by %d\n" % (t["name"], field_name, struct_size, field_align - struct_size % field_align)) # debug
+                                log.write("%s: align %s from %d by %d\n" % (t["name"], field["name"], struct_size, field_align - struct_size % field_align)) # debug
                             #end if
                             struct_size += field_align - struct_size % field_align
                         #end if
@@ -988,11 +988,16 @@ class Blenddata :
             # invokes action on the specified block, followed by all (indirectly or directly)
             # referenced blocks.
 
+            scan_recurse_depth = 0
+            max_scan_recurse_depth = 0
+
             scanned = set() # blocks that have already been scanned
 
             def scan_block_recurse(block, action) :
                 # invokes action on the specified block, followed by all (indirectly or directly)
                 # referenced blocks that haven't already been scanned.
+
+                nonlocal scan_recurse_depth, max_scan_recurse_depth
 
                 def check_item(item, itemtype) :
 
@@ -1037,6 +1042,11 @@ class Blenddata :
 
             #begin scan_block_recurse
                 if encode_ref(block) not in scanned :
+                    scan_recurse_depth += 1
+                    if scan_recurse_depth > max_scan_recurse_depth :
+                        max_scan_recurse_depth = scan_recurse_depth
+                        log.write("scan block %d at depth %d\n" % (block["index"], scan_recurse_depth)) # debug
+                    #end if
                     if action(block) :
                         scanned.add(encode_ref(block))
                         if block["decoded"] :
@@ -1051,6 +1061,7 @@ class Blenddata :
                               )
                         #end if
                     #end if
+                    scan_recurse_depth -= 1
                 #end if
             #end scan_block_recurse
 
