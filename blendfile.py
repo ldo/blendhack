@@ -381,6 +381,10 @@ class Blenddata :
     #end type_align
 
     def compute_alignments(self, compute_sizes = False, log = None) :
+        # computes alignments for all structs, and if compute_sizes, recomputes
+        # their sizes accordingly, else checks that they match what is computed.
+        # Checking alignments on load is helpful to ensure that I can generate
+        # correct structures on save.
         alignments = {}
         while True :
             missed_one = False
