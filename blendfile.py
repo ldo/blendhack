@@ -783,17 +783,19 @@ class Blenddata :
         sdna_seen = False
         while True :
             # collect all the blocks
-            blockcode, datasize, oldaddr, dna_index, dna_count = \
-                structread(fd, "%s4sI%sII" % (self.endian, self.ptrcode))
+            blockcode = fd.read(4)
+            if blockcode == b"ENDB" :
+                # file-end marker block
+                # don't try reading rest of block, because it might be truncated in some files
+                break
+            #end if
+            datasize, oldaddr, dna_index, dna_count = \
+                structread(fd, "%sI%sII" % (self.endian, self.ptrcode))
             log.write("blockcode at 0x%08x = %s, datasize = %d, oldaddr = 0x%x, dna_index = %d, dna_count = %d\n" % (fd.tell(), blockcode, datasize, oldaddr, dna_index, dna_count)) # debug
-            # log.write("blockcode = %s, datasize = %d, oldaddr = 0x%x, dna_index = %d, dna_count = %d\n" % (blockcode, datasize, oldaddr, dna_index, dna_count)) # debug
             if blockcode == b"DNA1" :
                 assert not sdna_seen, "duplicate SDNA blocks"
                 self.decode_sdna(fd.read(datasize), log)
                 sdna_seen = True
-            elif blockcode == b"ENDB" :
-                # file-end marker block
-                break
             else :
                 assert not sdna_seen, "data blocks after SDNA block"
                 new_block = \
