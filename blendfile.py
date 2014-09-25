@@ -171,12 +171,14 @@ class MethodType :
 #end MethodType
 
 def parse_field_type(field_name, field_type) :
-    # processes special forms of field_name ("*name", "name[ind]", "(*name)()"),
+    # processes special forms of field_name ("*name", "name[ind]", "(*name)()", "(*name)(void)"),
     # returning innermost name and adjusting field_type accordingly.
     if len(field_name) != 0 and field_name[0] == "*" :
         field_name, field_type = parse_field_type(field_name[1:], PointerType(field_type))
     elif field_name[:2] == "(*" and field_name[-3:] == ")()" :
         field_name, field_type = parse_field_type(field_name[2:-3], MethodType(field_type))
+    elif field_name[:2] == "(*" and field_name[-7:] == ")(void)" :
+        field_name, field_type = parse_field_type(field_name[2:-7], MethodType(field_type))
     else :
         indexstart = field_name.rfind("[")
         if indexstart >= 0 :
