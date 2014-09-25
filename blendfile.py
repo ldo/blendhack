@@ -358,6 +358,90 @@ class Blenddata :
             result
     #end type_size
 
+    def type_align(self, of_type, alignments) :
+        if type(of_type) == PointerType :
+            result = self.ptrsize
+        elif type(of_type) == FixedArrayType :
+            result = self.type_align(of_type.EltType, alignments)
+        elif type(of_type) == MethodType :
+            result = self.ptrsize
+        elif of_type["name"] in primitive_types :
+            result = max(of_type["size"], 1)
+        else :
+            assert of_type["name"] in alignments, "type %s has no alignment" % of_type["name"]
+            result = alignments[of_type["name"]]
+        #end if
+        return \
+            result
+    #end type_align
+
+    def compute_alignments(self, compute_sizes = False, log = None) :
+        alignments = {}
+        while True :
+            missed_one = False
+            resolved_count = 0 # debug
+            missed_count = 0 # debug
+            for t in self.types_by_index :
+                missed_this = False
+                if "fields" in t and t["name"] not in alignments :
+                    do_detail = t["name"] == "ScrArea" # debug
+                    struct_size = 0
+                    struct_align = 1
+                    for field in t["fields"] :
+                        field_size = self.type_size(field["type"])
+                        elt_type = field["type"]
+                        if type(elt_type) == FixedArrayType :
+                            elt_type = elt_type.EltType
+                        #end if
+                        if type(elt_type) == dict and "fields" in elt_type and elt_type["name"] not in alignments :
+                            log.write("unresolved %s.%s\n" % (t["name"], field["name"])) # debug
+                            missed_this = True
+                            break
+                        #end if
+                        # field_align = self.type_align(field["type"], alignments) # debug
+                        try : # debug
+                            field_align = self.type_align(field["type"], alignments)
+                            if do_detail :
+                                if log != None :
+                                    log.write("type %s(%s) align %d\n" % (type_name(field["type"]), type(type_name(field["type"])), field_align)) # debug
+                                #end if
+                            #end if
+                        except AssertionError :
+                            raise RuntimeError("couldn't get alignment for %s.%s : %s" % (t["name"], field["name"], field["type"])) # debug
+                        #end try
+                        if do_detail : log.write("%s.%s : %s offset %d size %d align %d\n" % (t["name"], field["name"], type_name(field["type"]), struct_size, field_size, field_align)) # debug
+                        struct_align = max(struct_align, field_align)
+                        if struct_size % field_align != 0 :
+                            if log != None :
+                                log.write("%s: align %s from %d by %d\n" % (t["name"], field_name, struct_size, field_align - struct_size % field_align)) # debug
+                            #end if
+                            struct_size += field_align - struct_size % field_align
+                        #end if
+                        struct_size += field_size
+                    #end for
+                    if missed_this :
+                        missed_one = True
+                        missed_count += 1 # debug
+                        continue
+                    #end if
+                    if compute_sizes :
+                        t["size"] = struct_size
+                    else :
+                        assert struct_size == t["size"], "size mismatch for struct %s, calc’d %d, got %d" % (t["name"], struct_size, t["size"])
+                    #end if
+                    log.write("alignment for %s = %d\n" % (t["name"], struct_align)) # debug
+                    alignments[t["name"]] = struct_align
+                    resolved_count += 1 # debug
+                #end if
+            #end for
+            log.write("resolved %d, missed %d\n" % (resolved_count, missed_count)) # debug
+            if not missed_one :
+                break
+        #end while
+        return \
+            alignments
+    #end compute_alignments
+
     def decode_sdna(self, sdna_data, log) :
         "decodes a structure definitions block and saves the results in instance variables."
         sdna_id = sdna_data[:4]
@@ -451,6 +535,7 @@ class Blenddata :
             log.write("struct[%d] is %s\n" % (i, self.types_by_index[struct_type]["name"])) # debug
             sdna_data = sdna_data[4 * nr_fields:]
         #end for
+        self.compute_alignments(log = log)
         self.types = {}
         for t in self.types_by_index :
             assert (t["name"] in primitive_types) <= ("fields" not in t), "primitive type %s must not be struct" % t["name"]
@@ -1003,7 +1088,11 @@ class Blenddata :
             openlog = open("/dev/null", "w")
             log = openlog
         #end if
-        # self.ptrsize = 4; self.ptrcode = "L" # hack!
+        if True : # hack!
+            self.ptrsize = 4
+            self.ptrcode = "L"
+            self.compute_alignments(compute_sizes = True, log = log)
+        #end if
         outfile = (open, gzip.open)[compressed](filename, "wb")
         outfile.write \
           (
