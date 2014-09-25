@@ -684,6 +684,8 @@ class Blenddata :
         # debug--dumps some stats about block types.
         block_codes = {}
         block_types = {}
+        block_codes_unrefd = None
+        block_types_unrefd = None
         max_name_length = 0
         for block in self.blocks :
             if block["decoded"] :
@@ -692,15 +694,60 @@ class Blenddata :
                 max_name_length = max(max_name_length, len(this_type))
                 block_codes[this_code] = block_codes.get(this_code, 0) + 1
                 block_types[this_type] = block_types.get(this_type, 0) + 1
+                if "refs" in block :
+                    if block_codes_unrefd == None :
+                        block_codes_unrefd = {}
+                    #end if
+                    if block_types_unrefd == None :
+                        block_types_unrefd = {}
+                    #end if
+                    if block["refs"] == 0 :
+                        block_codes_unrefd[this_code] = block_codes_unrefd.get(this_code, 0) + 1
+                        block_types_unrefd[this_type] = block_types_unrefd.get(this_type, 0) + 1
+                    #end if
+                #end if
             #end if
         #end for
         log.write("\nBlock code counts:\n")
+
         for this_code in sorted(block_codes) :
-            log.write("    %-19s %d\n" % (repr(this_code), block_codes[this_code]))
+            unrefd = block_codes_unrefd.get(this_code, 0)
+            log.write \
+              (
+                    (
+                        "    %(code)-19s %(count)d"
+                    +
+                        ("", " (unref’d: %(unrefd)d)")[unrefd != 0]
+                    +
+                        "\n"
+                    )
+                %
+                    {
+                        "code" : repr(this_code),
+                        "count" : block_codes[this_code],
+                        "unrefd" : unrefd,
+                    }
+              )
         #end if
         log.write("Block type counts:\n")
         for this_type in sorted(block_types) :
-            log.write("    %%-%ds %%d\n" % max_name_length % (this_type, block_types[this_type]))
+            unrefd = block_types_unrefd.get(this_type, 0)
+            log.write \
+              (
+                    (
+                        "    %%(type)-%ds %%(count)d" % max_name_length
+                    +
+                        ("", " (unref’d: %(unrefd)d)")[unrefd != 0]
+                    +
+                        "\n"
+                    )
+                %
+                    {
+                        "type" : this_type,
+                        "count" : block_types[this_type],
+                        "unrefd" : unrefd,
+                    }
+              )
         #end for
     #end dump_counts
 
