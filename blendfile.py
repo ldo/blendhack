@@ -952,7 +952,19 @@ class Blenddata :
             self
     #end load
 
-    def save(self, filename, compressed = False, encode_ref = default_encode_ref, use_rawdata = False, log = None) :
+    def save \
+      (
+        self,
+        filename,
+        compressed = False,
+        bit64 = None,
+          # can be False to force 32-bit pointers, True to force 64-bit, None to leave at default
+        big_endian = None,
+          # can be True or False to force big/little-endian, None to leave at default
+        encode_ref = default_encode_ref,
+        use_rawdata = False,
+        log = None,
+      ) :
         "saves the contents into a .blend file."
 
         referenced = set() # set of blocks that should be written out
@@ -1088,10 +1100,13 @@ class Blenddata :
             openlog = open("/dev/null", "w")
             log = openlog
         #end if
-        if True : # hack!
-            self.ptrsize = 4
-            self.ptrcode = "L"
+        if bit64 != None :
+            self.ptrsize = [4, 8][bit64]
+            self.ptrcode = {4 : "L", 8 : "Q"}[self.ptrsize]
             self.compute_alignments(compute_sizes = True, log = log)
+        #end if
+        if big_endian != None :
+            self.big_endian = big_endian
         #end if
         outfile = (open, gzip.open)[compressed](filename, "wb")
         outfile.write \

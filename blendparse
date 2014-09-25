@@ -57,16 +57,22 @@ opts, args = getopt.getopt \
   (
     sys.argv[1:],
     "",
-    ("debug", "raw"),
+    ("bits=", "debug", "endian=", "raw"),
   )
 if len(args) not in (1, 2) :
     raise getopt.GetoptError("usage: %s blendfile [outfile]" % sys.argv[0])
 #end if
+bit64 = None
+big_endian = None
 debug = False
 use_rawdata = False
 for keyword, value in opts :
-    if keyword == "--debug" :
+    if keyword == "--bits" :
+        bit64 = {32 : False, 64 : True}[int(value)]
+    elif keyword == "--debug" :
         debug = True
+    elif keyword == "--endian" :
+        big_endian = {"big" : True, "little" : False}[value.lower()]
     elif keyword == "--raw" :
         use_rawdata = True
     #end if
@@ -149,7 +155,15 @@ if len(args) > 1 :
     #end for
 
     if True :
-        blend.save(args[1], use_rawdata = use_rawdata, encode_ref = lambda block : block["index"], log = log)
+        blend.save \
+          (
+            filename = args[1],
+            bit64 = bit64,
+            big_endian = big_endian,
+            encode_ref = lambda block : block["index"],
+            use_rawdata = use_rawdata,
+            log = log,
+          )
     else :
         # trying to figure out why Blender crashes, so start with exact
         # recreation of original file and work back from there
