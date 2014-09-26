@@ -1037,6 +1037,11 @@ class Blenddata :
                     block_type = block_type.EltType
                     dna_count = None
                     if is_primitive_type(block_type) :
+                        type_size = self.type_size(block_type)
+                        if type_size == 0 : # type is void
+                            block_type = make_primitive_type("uchar")
+                            type_size = 1
+                        #end if
                         dna_count = len(block["rawdata"]) // self.type_size(block_type)
                     #end if
                     log.write("decoding untyped block[%d] as %s\n" % (block["index"], repr(block_type))) # debug
