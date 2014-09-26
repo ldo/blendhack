@@ -1227,6 +1227,7 @@ class Blenddata :
         #end if
         if big_endian != None :
             self.big_endian = big_endian
+            self.endian = {False : "<", True : ">"}[big_endian]
         #end if
         outfile = (open, gzip.open)[compressed](filename, "wb")
         outfile.write \
