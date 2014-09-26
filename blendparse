@@ -92,9 +92,17 @@ if log != None :
             if block.get("refs") == 0 :
                 log.write(" - no refs to this block\n")
             #end if
-            for item in block["data"] :
-                log.write(" => " + dict_repr(item) + "\n")
-            #end for
+            if blendfile.type_name(block["type"]) == "char" :
+                log.write(" => ")
+                log.write(repr(b"".join(item for item in block["data"])))
+                log.write("\n")
+            else :
+                for item in block["data"] :
+                    log.write(" => ")
+                    log.write(dict_repr(item))
+                    log.write("\n")
+                #end for
+            #end if
         else :
             log.write("block[%d] undecoded\n" % i)
         #end if
@@ -131,7 +139,7 @@ if len(args) > 1 :
                 pass
             elif datatype["name"] in blendfile.primitive_types :
                 pass
-            elif "fields" in datatype :
+            elif blendfile.is_struct_type(datatype) and type(data) == dict :
                 for field in datatype["fields"] :
                     remap_refs \
                       (
