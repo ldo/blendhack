@@ -1050,8 +1050,8 @@ class Blenddata :
         self.ptrsize = {b"_" : 4, b"-" : 8}[ptrcode]
         self.ptrcode = {b"_" : "L", b"-" : "Q"}[ptrcode]
         self.endian = {b"v" : "<", b"V" : ">"}[endiancode]
-        self.big_endian = endiancode == "V"
-        log.write("File Blender version = %s, ptrsize = %d, endian = %s\n" % (repr(self.version), self.ptrsize, ("little", "big")[endiancode == "V"]))
+        self.big_endian = endiancode == b"V"
+        log.write("File Blender version = %s, ptrsize = %d, endian = %s\n" % (repr(self.version), self.ptrsize, ("little", "big")[endiancode == b"V"]))
         self.blocks = []
         self.blocks_by_oldaddress = {}
         self.global_block = None
