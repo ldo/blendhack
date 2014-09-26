@@ -552,6 +552,7 @@ class Blenddata :
             assert (t["name"] in primitive_types) <= ("fields" not in t), "primitive type %s must not be struct" % t["name"]
             self.types[t["name"]] = t
         #end for
+        assert self.structs_by_index[0] == self.types["Link"], "Link type needs to have index 0"
         self.link_type = self.types["Link"]
           # should I bother to check it consists of exactly 2 fields, both of type *Link?
         for k in primitive_types :
