@@ -88,13 +88,15 @@ blend = blendfile.Blenddata().load(args[0], keep_rawdata = use_rawdata, count_re
 if log != None :
     for i, block in enumerate(blend.blocks) :
         if block["decoded"] :
-            log.write("block[%d](%s)[%s]@%#x : %s[%d]\n" % (i, repr(block["code"]), len(block.get("rawdata", "")), block["oldaddr"], block["type"]["name"], block["dna_count"])) # debug
+            log.write("block[%d](%s)[%s]@%#x : %s[%d]\n" % (i, repr(block["code"]), len(block.get("rawdata", "")), block["oldaddr"], blendfile.type_name(block["type"]), block["dna_count"])) # debug
             if block.get("refs") == 0 :
                 log.write(" - no refs to this block\n")
             #end if
             for item in block["data"] :
                 log.write(" => " + dict_repr(item) + "\n")
             #end for
+        else :
+            log.write("block[%d] undecoded\n" % i)
         #end if
     #end for
 #end if

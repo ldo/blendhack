@@ -226,6 +226,11 @@ def type_name(of_type) :
         }.get(type(of_type), lambda : of_type["name"])()
 #end type_name
 
+def is_struct_type(of_type) :
+    return \
+        type(of_type) == dict and "fields" in of_type
+#end is_struct_type
+
 primitive_types = \
     { # "code" is the code to pass to struct.pack/unpack to pack/unpack values of this type
         "char" : {"code" : "c", "size" : 1},
@@ -396,7 +401,7 @@ class Blenddata :
             missed_one = False
             for t in self.types_by_index :
                 missed_this = False
-                if "fields" in t and t["name"] not in self.alignments :
+                if is_struct_type(t) and t["name"] not in self.alignments :
                     struct_size = 0
                     struct_align = 1
                     for field in t["fields"] :
@@ -405,7 +410,7 @@ class Blenddata :
                         if type(elt_type) == FixedArrayType :
                             elt_type = elt_type.EltType
                         #end if
-                        if type(elt_type) == dict and "fields" in elt_type and elt_type["name"] not in self.alignments :
+                        if is_struct_type(elt_type) and elt_type["name"] not in self.alignments :
                             missed_this = True
                             break
                         #end if
@@ -756,6 +761,124 @@ class Blenddata :
             )[block["decoded"]]()
     #end encode_data
 
+    def scan_block(self, referrer, referrer_type, selector, block, action, encode_ref, log = None) :
+        # invokes action(referrer, selector, block) on the specified block, followed by
+        # all (indirectly or directly) referenced blocks. Traversal stops if action returns
+        # False.
+
+        scan_recurse_depth = 0
+        max_scan_recurse_depth = 0
+
+        scanned = set() # blocks that have already been scanned
+
+        def scan_block_recurse(referrer, referrer_type, selector, block, action) :
+            # invokes action on the specified block, followed by all (indirectly or directly)
+            # referenced blocks that haven't already been scanned.
+
+            nonlocal scan_recurse_depth, max_scan_recurse_depth
+
+            def check_item(referrer, referrer_type, selector, item, itemtype) :
+
+                def check_scan_ref() :
+                    # assume at most one level of pointer indirection!
+                    if type(item) == BlockRef :
+                        scan_block_recurse(referrer, referrer_type, selector, item.block, action)
+                    #end if
+                #end check_scan_ref
+
+                def check_array() :
+                    # debug
+                    if log != None and len(item) != itemtype.NrElts :
+                        log.write("array %s has %d elts, expected %d\n" % (repr(item), len(item), itemtype.NrElts))
+                    #end if
+                    #end debug
+                    for i in range(itemtype.NrElts) :
+                        check_item(item, itemtype, i, item[i], itemtype.EltType)
+                    #end for
+                #end check_array
+
+                def check_struct() :
+                    assert type(item) == dict or itemtype == self.link_type, "non-struct value %s, expected type %s" % (repr(item), repr(itemtype))
+                    if type(item) == dict :
+                        for field in itemtype["fields"] :
+                            fieldval = (item.__getitem__, item.get)[itemtype == self.link_type](field["name"])
+                            if fieldval != None :
+                                check_item(item, itemtype, field, fieldval, field["type"])
+                            #end if
+                        #end for
+                    #end if
+                #end check_struct
+
+            #begin check_item
+                # transitively check other referenced blocks that haven't already
+                # been scanned
+                if type(itemtype) == PointerType :
+                    check_scan_ref()
+                elif type(itemtype) == FixedArrayType and itemtype.EltType != self.types["char"] :
+                    check_array()
+                elif is_struct_type(itemtype) :
+                    check_struct()
+                #end if
+            #end check_item
+
+        #begin scan_block_recurse
+            block_ref = encode_ref(block)
+            if block_ref not in scanned :
+                scan_recurse_depth += 1
+                if scan_recurse_depth > max_scan_recurse_depth :
+                    max_scan_recurse_depth = scan_recurse_depth
+                    if log != None :
+                        log.write("scan block %d at depth %d\n" % (block["index"], scan_recurse_depth)) # debug
+                    #end if
+                #end if
+                if action(referrer, referrer_type, selector, block) :
+                    scanned.add(block_ref)
+                    if block["decoded"] :
+                        check_item \
+                          (
+                            referrer,
+                            referrer_type,
+                            selector,
+                            block["data"],
+                            FixedArrayType
+                              (
+                                self.structs_by_index[block["dna_index"]],
+                                len(block["data"])
+                              )
+                          )
+                    #end if
+                #end if
+                scan_recurse_depth -= 1
+            #end if
+        #end scan_block_recurse
+
+    #begin scan_block
+        scan_block_recurse(referrer, referrer_type, selector, block, action)
+    #end scan_block
+
+    def decode_block(self, block, block_type, log) :
+        block["type"] = block_type
+        type_size = self.type_size(block_type)
+        decoded = []
+        for j in range(block["dna_count"]) :
+            decoded.append \
+              (
+                self.decode_data
+                  (
+                    block["rawdata"][j * type_size : (j + 1) * type_size],
+                    block_type,
+                    log
+                  )
+              )
+        #end for
+        leftover = max(len(block["rawdata"]) - type_size * block["dna_count"], 0)
+        if leftover > 0 :
+            log.write("# ignoring %d bytes at end of block %d\n" % (leftover, block["index"]))
+        #end if
+        block["data"] = decoded
+        block["decoded"] = True
+    #end decode_block
+
     def construct_block(self, code, oldaddr, dna_index, dna_count, contents) :
         # prepends a header for the specified block contents and returns the complete block.
         return \
@@ -784,7 +907,7 @@ class Blenddata :
         for block in self.blocks :
             if block["decoded"] :
                 this_code = block["code"]
-                this_type = block["type"]["name"]
+                this_type = type_name(block["type"])
                 max_name_length = max(max_name_length, len(this_type))
                 block_codes[this_code] = block_codes.get(this_code, 0) + 1
                 block_types[this_type] = block_types.get(this_type, 0) + 1
@@ -803,7 +926,6 @@ class Blenddata :
             #end if
         #end for
         log.write("\nBlock code counts:\n")
-
         for this_code in sorted(block_codes) :
             unrefd = block_codes_unrefd.get(this_code, 0)
             log.write \
@@ -847,6 +969,38 @@ class Blenddata :
 
     def load(self, filename, keep_rawdata = False, count_refs = False, log = None) :
         "loads the contents of the specified .blend file."
+
+        encode_ref = self.__class__.default_encode_ref # good enough
+
+        def decode_untyped_blocks() :
+          # tries to determine types of undecoded blocks by expected types of
+          # pointers to them
+
+            def decode_block_action(referrer, referrer_type, selector, block) :
+                if not block["decoded"] :
+                    assert referrer != None and referrer_type != None and selector != None, \
+                        "undecoded top-level block!?"
+                    block_type = None
+                    if type(referrer_type) == FixedArrayType :
+                        block_type = referrer_type.EltType
+                    elif is_struct_type(referrer_type) :
+                        block_type = selector["type"]
+                    #end if
+                    assert type(block_type) == PointerType, "cannot determine referrer-selector type"
+                    block_type = block_type.EltType
+                    self.decode_block(block, block_type, log)
+                    self.scan_block(referrer, referrer_type, selector, block, decode_block_action, encode_ref, log)
+                      # in case it points to further undecoded blocks
+                #end if
+                return \
+                    True
+            #end decode_block_action
+
+        #begin decode_untyped_blocks
+            self.scan_block(None, None, None, self.global_block, decode_block_action, encode_ref, log)
+        #end decode_untyped_blocks
+
+    #begin load
         openlog = None
         if log == None :
             openlog = open("/dev/null", "w")
@@ -941,29 +1095,13 @@ class Blenddata :
                 log.write("not decoding block %d\n" % block["index"]) # debug
             #end if
             if block["decoded"] :
-                block["type"] = block_type
-                decoded = []
-                for j in range(block["dna_count"]) :
-                    decoded.append \
-                      (
-                        self.decode_data
-                          (
-                            block["rawdata"][j * block_type["size"] : (j + 1) * block_type["size"]],
-                            block_type,
-                            log
-                          )
-                      )
-                #end for
-                leftover = max(len(block["rawdata"]) - block_type["size"] * block["dna_count"], 0)
-                if leftover > 0 :
-                    log.write("# ignoring %d bytes at end of block %d\n" % (leftover, i))
-                #end if
-                block["data"] = decoded
+                self.decode_block(block, block_type, log)
                 if not keep_rawdata :
                     del block["rawdata"]
                 #end if
             #end if
         #end for
+        decode_untyped_blocks()
         self.dump_counts(log) # debug
         if openlog != None :
             openlog.flush()
@@ -993,7 +1131,7 @@ class Blenddata :
         def find_referenced() :
             # marks all specially-coded blocks needing saving.
 
-            def referenced_action(block) :
+            def referenced_action(referrer, selector, block) :
                 if block["code"] != b"DATA" :
                     referenced.add(encode_ref(block))
                 #end if
@@ -1002,96 +1140,11 @@ class Blenddata :
             #end referenced_action
 
         #begin find_referenced
-            scan_block(self.global_block, referenced_action)
+            self.scan_block(None, None, None, self.global_block, referenced_action, encode_ref, log)
             if self.user_prefs_block != None :
-                scan_block(self.user_prefs_block, referenced_action)
+                self.scan_block(None, None, None, self.user_prefs_block, referenced_action, encode_ref, log)
             #end if
         #end find_referenced
-
-        def scan_block(block, action) :
-            # invokes action on the specified block, followed by all (indirectly or directly)
-            # referenced blocks.
-
-            scan_recurse_depth = 0
-            max_scan_recurse_depth = 0
-
-            scanned = set() # blocks that have already been scanned
-
-            def scan_block_recurse(block, action) :
-                # invokes action on the specified block, followed by all (indirectly or directly)
-                # referenced blocks that haven't already been scanned.
-
-                nonlocal scan_recurse_depth, max_scan_recurse_depth
-
-                def check_item(item, itemtype) :
-
-                    def check_scan_ref() :
-                        # assume at most one level of pointer indirection!
-                        if type(item) == BlockRef :
-                            scan_block_recurse(item.block, action)
-                        #end if
-                    #end check_scan_ref
-
-                    def check_array() :
-                        # debug
-                        if len(item) != itemtype.NrElts :
-                            log.write("array %s has %d elts, expected %d\n" % (repr(item), len(item), itemtype.NrElts))
-                        #end if
-                        #end debug
-                        for i in range(itemtype.NrElts) :
-                            check_item(item[i], itemtype.EltType)
-                        #end for
-                    #end check_array
-
-                    def check_struct() :
-                        for field in itemtype["fields"] :
-                            fieldval = (item.__getitem__, item.get)[itemtype == self.link_type](field["name"])
-                            if fieldval != None :
-                                check_item(fieldval, field["type"])
-                            #end if
-                        #end for
-                    #end check_struct
-
-                #begin check_item
-                    # transitively check other referenced blocks that haven't already
-                    # been scanned
-                    if type(itemtype) == PointerType :
-                        check_scan_ref()
-                    elif type(itemtype) == FixedArrayType and itemtype.EltType != self.types["char"] :
-                        check_array()
-                    elif type(itemtype) == dict and "fields" in itemtype :
-                        check_struct()
-                    #end if
-                #end check_item
-
-            #begin scan_block_recurse
-                if encode_ref(block) not in scanned :
-                    scan_recurse_depth += 1
-                    if scan_recurse_depth > max_scan_recurse_depth :
-                        max_scan_recurse_depth = scan_recurse_depth
-                        log.write("scan block %d at depth %d\n" % (block["index"], scan_recurse_depth)) # debug
-                    #end if
-                    if action(block) :
-                        scanned.add(encode_ref(block))
-                        if block["decoded"] :
-                            check_item \
-                              (
-                                block["data"],
-                                FixedArrayType
-                                  (
-                                    self.structs_by_index[block["dna_index"]],
-                                    len(block["data"])
-                                  )
-                              )
-                        #end if
-                    #end if
-                    scan_recurse_depth -= 1
-                #end if
-            #end scan_block_recurse
-
-        #begin scan_block
-            scan_block_recurse(block, action)
-        #end scan_block
 
         def save_block(block) :
             # saves the specified block, followed by all (indirectly or directly)
@@ -1099,7 +1152,7 @@ class Blenddata :
 
             done_coded = False
 
-            def save_action(block) :
+            def save_action(referrer, selector, block) :
                 nonlocal done_coded
                 doit = block["code"] == b"DATA" or not done_coded
                   # stop at next non-DATA block
@@ -1127,7 +1180,7 @@ class Blenddata :
             #end save_action
 
         #begin save_block
-            scan_block(block, save_action)
+            self.scan_block(None, None, None, block, save_action, encode_ref, log)
         #end save_block
 
     #begin save
