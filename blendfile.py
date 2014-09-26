@@ -328,9 +328,6 @@ class Blenddata :
     #     link_type --
     #         the Link type, that needs to be treated specially because fields
     #         of this type are often missing
-    #     nr_types --
-    #         length of initial part of types_by_index that actually came from
-    #         .blend file, and should go back into it
     #     ptrcode --
     #         code to use to struct.unpack to decode a pointer field
     #     ptrsize --
@@ -344,8 +341,7 @@ class Blenddata :
     #     types --
     #         type definitions collected from Structure DNA block, indexed by name
     #     types_by_index
-    #         type definitions collected from Structure DNA block, indexed by number.
-    #         also includes (at the end) additional types generated for REND and TEST blocks.
+    #         type definitions collected from Structure DNA block, indexed by number
     #     user_prefs_block --
     #         "USER" block, if any
     #     version --
@@ -574,7 +570,6 @@ class Blenddata :
             assert (t["name"] in primitive_types) <= ("fields" not in t), "primitive type %s must not be struct" % t["name"]
             self.types[t["name"]] = t
         #end for
-        self.nr_types = len(self.types_by_index)
         assert self.structs_by_index[0] == self.types["Link"], "Link type needs to have index 0"
         self.link_type = self.types["Link"]
           # should I bother to check it consists of exactly 2 fields, both of type *Link?
@@ -617,7 +612,7 @@ class Blenddata :
         in \
             (
                 (b"NAME", sorted(names.keys(), key = lambda n : names[n])),
-                (b"TYPE", (self.types_by_index[i]["name"] for i in range(self.nr_types))),
+                (b"TYPE", (thistype["name"] for thistype in self.types_by_index)),
             ) \
         :
             contents = list(contents) # need length
@@ -634,8 +629,8 @@ class Blenddata :
         #end for
         out.write(b"TLEN")
         offset = 0
-        for i in range(self.nr_types):
-            out.write(struct.pack(self.endian + "H", self.types_by_index[i]["size"]))
+        for thistype in self.types_by_index :
+            out.write(struct.pack(self.endian + "H", thistype["size"]))
             offset += 2
         #end for
         if offset % 4 != 0 :
@@ -1161,7 +1156,6 @@ class Blenddata :
                                 },
                             ],
                     }
-                self.types_by_index.append(block["type"])
                 self.compute_alignment(block["type"], compute_sizes = True, log = log)
                 block["data"] = self.decode_data(block["rawdata"], block["type"], log = log)
                 block["decoded"] = True
@@ -1181,7 +1175,6 @@ class Blenddata :
                                 },
                             ],
                     }
-                self.types_by_index.append(block["type"])
                 self.compute_alignment(block["type"], compute_sizes = True, log = log)
                 block["data"] = self.decode_data(block["rawdata"], block["type"], log = log)
                 block["decoded"] = True
