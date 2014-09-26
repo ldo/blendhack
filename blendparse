@@ -92,16 +92,22 @@ if log != None :
             if block.get("refs") == 0 :
                 log.write(" - no refs to this block\n")
             #end if
-            if blendfile.type_name(block["type"]) == "char" :
-                log.write(" => ")
-                log.write(repr(b"".join(item for item in block["data"])))
-                log.write("\n")
-            else :
-                for item in block["data"] :
+            if type(block["data"]) in (tuple, list) :
+                if blendfile.type_name(block["type"]) == "char" :
                     log.write(" => ")
-                    log.write(dict_repr(item))
+                    log.write(repr(b"".join(item for item in block["data"])))
                     log.write("\n")
-                #end for
+                else :
+                    for item in block["data"] :
+                        log.write(" => ")
+                        log.write(dict_repr(item))
+                        log.write("\n")
+                    #end for
+                #end if
+            else :
+                log.write(" => ")
+                log.write(repr(block["data"]))
+                log.write("\n")
             #end if
         else :
             log.write("block[%d] undecoded\n" % i)
@@ -153,9 +159,11 @@ if len(args) > 1 :
     #begin remap_block
         if "data" in block :
             datatype = blend.structs_by_index[block["dna_index"]]
-            for i in range(len(block["data"])) :
-                remap_refs(block["data"][i], datatype)
-            #end for
+            if type(block["data"]) in (tuple, list) :
+                for i in range(len(block["data"])) :
+                    remap_refs(block["data"][i], datatype)
+                #end for
+            #end if
         #end if
     #end remap_block
 
