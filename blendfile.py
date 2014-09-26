@@ -1298,6 +1298,9 @@ class Blenddata :
             self.ptrsize = [4, 8][bit64]
             self.ptrcode = {4 : "L", 8 : "Q"}[self.ptrsize]
             self.compute_alignments(compute_sizes = True, log = log)
+              # Note this does not reprocess the synthesized types for REND and TEST blocks,
+              # since these are special-cased on creation and not included in types_by_index.
+              # But that's OK, since they don't contain any pointers.
         #end if
         if big_endian != None :
             self.big_endian = big_endian
