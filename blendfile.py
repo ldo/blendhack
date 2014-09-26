@@ -356,6 +356,7 @@ class Blenddata :
     #     "endaddr" -- one past the end of the in-memory addresses spanned by the block
     #     "index" -- the index number of the block, used for less-cluttered display dumps
     #     "oldaddr" -- the saved in-memory address of the block
+    #     "override_type" -- if present, contents were decoded according to this type (dna_index should be 0)
     #     "rawdata" -- the raw, undecoded data (only kept if keep_rawdata is specified to load)
     #     "refs" -- number of references to this block (optional, only present if count_refs is specified to load)
     #     "type" -- (only if the block contents were decodeable) -- the reference to the structure type of the block contents
@@ -774,14 +775,17 @@ class Blenddata :
         #end encode_item
 
     #begin encode_data
+        if block["decoded"] :
+            block_type = block.get("override_type", self.structs_by_index[block["dna_index"]])
+            result = b"".join \
+              (
+                encode_item(item, block_type) for item in block["data"]
+              )
+        else :
+            result = block["rawdata"]
+        #end if
         return \
-            (
-                lambda : block["rawdata"],
-                lambda : b"".join \
-                  (
-                    encode_item(i, self.structs_by_index[block["dna_index"]]) for i in block["data"]
-                  ),
-            )[block["decoded"]]()
+            result
     #end encode_data
 
     def scan_block(self, referrer, referrer_type, selector, block, action, encode_ref, log = None) :
@@ -1019,6 +1023,7 @@ class Blenddata :
                         dna_count = len(block["rawdata"]) // self.type_size(block_type)
                     #end if
                     log.write("decoding untyped block[%d] as %s\n" % (block["index"], repr(block_type))) # debug
+                    block["override_type"] = block_type
                     self.decode_block(block, block_type, dna_count = dna_count, log = log)
                     self.scan_block(referrer, referrer_type, selector, block, decode_block_action, encode_ref, log)
                       # in case it points to further undecoded blocks
