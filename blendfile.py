@@ -1045,16 +1045,13 @@ class Blenddata :
                     #end if
                     assert type(block_type) == PointerType, "cannot determine referrer-selector type"
                     block_type = block_type.EltType
-                    dna_count = None
-                    if is_primitive_type(block_type) :
-                        type_size = self.type_size(block_type)
-                        if type_size == 0 : # type is void
-                            block_type = make_primitive_type("uchar")
-                            type_size = 1
-                        #end if
-                        dna_count = len(block["rawdata"]) // self.type_size(block_type)
+                    type_size = self.type_size(block_type)
+                    if type_size == 0 : # type is void
+                        block_type = make_primitive_type("uchar")
+                        type_size = 1
                     #end if
-                    log.write("decoding untyped block[%d] as %s\n" % (block["index"], repr(block_type))) # debug
+                    dna_count = len(block["rawdata"]) // self.type_size(block_type)
+                    log.write("decoding untyped block[%d] as %s [%d]\n" % (block["index"], repr(block_type), dna_count)) # debug
                     block["override_type"] = block_type
                     self.decode_block(block, block_type, dna_count = dna_count, log = log)
                     self.scan_block(referrer, referrer_type, selector, block, decode_block_action, encode_ref, log)
@@ -1196,9 +1193,9 @@ class Blenddata :
                 self.compute_alignment(block["type"], compute_sizes = True, log = log)
                 block["data"] = self.decode_data(block["rawdata"], block["type"], log = log)
                 block["decoded"] = True
-            elif block_type != self.link_type or len(block["rawdata"]) == block_type["size"] :
-              # blocks of Link type with mismatched size are left to decode_untyped_blocks,
-              # because they are not actually of Link type.
+            elif block_type != self.link_type :
+              # blocks of Link type are left to decode_untyped_blocks,
+              # because they do not seem to actually be of Link type.
                 self.decode_block(block, block_type, log = log)
             else :
                 block["decoded"] = False
