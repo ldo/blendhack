@@ -21,7 +21,7 @@
 #     * blocks with code "SN\x00\x00" (newer Blender) or "SR\x00\x00" (older Blender), type bScreen.
 #     * blocks with code "MC\x00\x00", type MovieClip.
 #     * blocks with code "MS\x00\x00", type Mask.
-#     * one or more blocks with code "SC\x00\x00", type Scene.
+#     * blocks with code "SC\x00\x00", type Scene.
 #     * blocks with code "CU\x00\x00", type Curve.
 #     * blocks with code "MB\x00\x00", type MetaBall.
 #     * blocks with code "IM\x00\x00", type Image.
@@ -35,6 +35,7 @@
 #     * blocks with code "SK\x00\x00", type Speaker.
 #     * blocks with code "SO\x00\x00", type Sound.
 #     * blocks with code "GR\x00\x00", type Group.
+#     * blocks with code "AR\x00\x00", type bArmature.
 #     * blocks with code "AC\x00\x00", type bAction.
 #     * blocks with code "OB\x00\x00", type Object.
 #     * blocks with code "MA\x00\x00", type Material.
@@ -43,9 +44,12 @@
 #     * blocks with code "PA\x00\x00", type ParticleSettings.
 #     * blocks with code "NT\x00\x00", type NodeTree.
 #     * blocks with code "BR\x00\x00", type Brush.
+#     * blocks with code "PL\x00\x00", type Palette.
+#     * blocks with code "PC\x00\x00", type PaintCurve.
 #     * blocks with code "PY\x00\x00", type Script (obsolete).
 #     * blocks with code "GD\x00\x00", type GreasePencil.
 #     * blocks with code "IP\x00\x00", type Ipo (obsolete, replaced by FCurves in DATA blocks).
+#     * blocks with code "LS\x00\x00", type FreestyleLineStyle.
 #     * blocks with code "LI\x00\x00", type Library.
 #     * possibly one block with code "USER" (only present in startup.blend),
 #       followed by DATA blocks containing custom keymaps, addon properties, autoexec paths
@@ -275,7 +279,8 @@ def is_string_type(of_type) :
 #end is_string_type
 
 block_code_order = \
-    ( # blocks should be written to file in this order to avoid Blender crashes
+    ( # blocks should be written to file in this order to avoid Blender crashes.
+      # order taken from write_file_handle routine in source/blender/blenloader/intern/writefile.c.
         b"WM\x00\x00", # type wmWindowManager.
         b"SN\x00\x00", # (newer Blender) type bScreen.
         b"SR\x00\x00", # (older Blender) type bScreen.
@@ -295,6 +300,7 @@ block_code_order = \
         b"SK\x00\x00", # type Speaker.
         b"SO\x00\x00", # type Sound.
         b"GR\x00\x00", # type Group.
+        b"AR\x00\x00", # type bArmature
         b"AC\x00\x00", # type bAction.
         b"OB\x00\x00", # type Object.
         b"MA\x00\x00", # type Material.
@@ -303,13 +309,17 @@ block_code_order = \
         b"PA\x00\x00", # type ParticleSettings.
         b"NT\x00\x00", # type NodeTree.
         b"BR\x00\x00", # type Brush.
+        b"PL\x00\x00", # type Palette.
+        b"PC\x00\x00", # type PaintCurve.
         b"PY\x00\x00", # type Script (obsolete).
         b"GD\x00\x00", # type GreasePencil.
         b"IP\x00\x00", # type Ipo (obsolete, replaced by FCurves).
+        b"LS\x00\x00", # type FreestyleLineStyle
         b"LI\x00\x00", # type Library.
     )
 
 blender_sig = b"BLENDER"
+  # file must begin with this
 
 class Blenddata :
     "Call the load method on an instance of this to parse a .blend file, passing it" \
