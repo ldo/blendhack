@@ -1,15 +1,16 @@
 #!/usr/bin/python3
 #+
 # Test of trying to parse the contents of .blend files created by
-# Blender <http://www.blender.org/>. Invoke this script as follows:
+# Blender <http://www.blender.org/>, and make basic modifications
+# to them. Invoke this script as follows:
 #
-#     blendparse blendfile [outfile]
+#     blendhack blendfile [outfile]
 #
 # where blendfile is the name of a .blend file to analyze, and outfile
 # is an optional output .blend file to try creating.
 # The output of the script will be a dump of the decoded file contents.
 #
-# Copyright 2012 Lawrence D'Oliveiro <ldo@geek-central.gen.nz>.
+# Copyright 2012, 2014 Lawrence D'Oliveiro <ldo@geek-central.gen.nz>.
 #
 # This program is free software: you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software
