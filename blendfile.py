@@ -1073,6 +1073,7 @@ class Blenddata :
             fd = origfd
             origfd = None
         #end if
+        known_block_codes = frozenset(block_code_order)
         sig, ptrcode, endiancode, self.version = structread(fd, "7s1s1s3s") # note not endian-dependent
         assert sig == blender_sig, "unrecognized file header signature %s" % sig
         self.ptrsize = {b"_" : 4, b"-" : 8}[ptrcode]
@@ -1093,6 +1094,8 @@ class Blenddata :
             if blockcode[:2] == b"\x00\x00" :
                 blockcode = blockcode[2:] + blockcode[:2]
             #end if
+            assert blockcode[2:] != b"\x00\x00" or blockcode in known_block_codes, \
+                "unknown block code %s" % repr(blockcode)
             if blockcode == b"ENDB" :
                 # file-end marker block
                 # don't try reading rest of block, because it might be truncated in some files
