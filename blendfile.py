@@ -885,8 +885,8 @@ class Blenddata :
                         log.write("scan block %d at depth %d\n" % (block["index"], scan_recurse_depth)) # debug
                     #end if
                 #end if
+                scanned.add(block_ref)
                 if action(referrer, referrer_type, selector, block) :
-                    scanned.add(block_ref)
                     if block["decoded"] :
                         check_item \
                           (
@@ -1230,6 +1230,7 @@ class Blenddata :
         "saves the contents into a .blend file."
 
         referenced = set() # set of blocks that should be written out
+        saved = set() # set of blocks that have been written out, to avoid double-saving
 
         def find_referenced() :
             # marks all specially-coded blocks needing saving.
@@ -1257,9 +1258,11 @@ class Blenddata :
 
             def save_action(referrer, referrer_type, selector, block) :
                 nonlocal done_coded
-                doit = block["code"] == b"DATA" or not done_coded
+                block_ref = encode_ref(block)
+                doit = block_ref not in saved and (block["code"] == b"DATA" or not done_coded)
                   # stop at next non-DATA block
                 if doit :
+                    saved.add(block_ref)
                     if block["code"] != b"DATA" :
                         done_coded = True
                     #end if
@@ -1268,7 +1271,7 @@ class Blenddata :
                         self.construct_block
                           (
                             block["code"],
-                            encode_ref(block),
+                            block_ref,
                             block["dna_index"],
                             block["dna_count"],
                             (
