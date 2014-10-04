@@ -715,13 +715,13 @@ class Blenddata :
             for field in datatype["fields"] :
                 field_size = self.type_size(field["type"])
                 field_align = self.type_align(field["type"])
-                adj = align_adjust(field_offset, field_align)
-                if adj != 0 :
-                    if log != None :
+                if log != None :
+                    adj = align_adjust(field_offset, field_align)
+                    if adj != 0 :
                         log.write("decode %s: align %s from %d by %d\n" % (datatype["name"], field["name"], field_offset, adj)) # debug
                     #end if
                 #end if
-                field_offset += adj
+                field_offset += align_adjust(field_offset, field_align)
                 if field_offset + field_size > len(rawdata) :
                     if log != None :
                         log.write("# need at least %d bytes for %s.%s, only got %d\n" % (field_size, datatype["name"], field["name"], len(rawdata) - field_offset))
@@ -740,7 +740,7 @@ class Blenddata :
 
     default_encode_ref = lambda block : block["oldaddr"]
 
-    def encode_data(self, data, datatype, encode_ref = default_encode_ref) :
+    def encode_data(self, data, datatype, encode_ref = default_encode_ref, log = None) :
         if type(datatype) == PointerType :
             # oldaddress isn't actually important
             if data == None :
@@ -765,7 +765,7 @@ class Blenddata :
             else :
                 result = b"".join \
                   (
-                    self.encode_data(i, datatype.EltType, encode_ref = encode_ref) for i in data
+                    self.encode_data(i, datatype.EltType, encode_ref = encode_ref, log = log) for i in data
                   )
             #end if
             if datatype.EltType == self.types["char"] :
@@ -782,20 +782,21 @@ class Blenddata :
             result = b""
             for field in datatype["fields"] :
                 field_align = self.type_align(field["type"])
-                adj = align_adjust(len(result), field_align)
-                if adj != 0 :
-                    if log != None :
+                if log != None :
+                    adj = align_adjust(len(result), field_align)
+                    if adj != 0 :
                         log.write("encode %s: align %s from %d by %d\n" % (datatype["name"], field["name"], len(result), field_align - len(result) % field_align)) # debug
                     #end if
                 #end if
-                result += bytes(adj)
+                result += bytes(align_adjust(len(result), field_align))
                 assert type(data) == dict or datatype == self.link_type, "encode_data of non-struct value %s, expected type %s" % (repr(data), repr(datatype))
                 if type(data) == dict :
                     result += self.encode_data \
                       (
                         (data.__getitem__, data.get)[datatype == self.link_type](field["name"]),
                         field["type"],
-                        encode_ref = encode_ref
+                        encode_ref = encode_ref,
+                        log = log
                       )
                 else :
                     raise RuntimeError("don't know how to encode item %s as %s" % (repr(data), repr(datatype)))
@@ -812,7 +813,7 @@ class Blenddata :
             block_type = block.get("override_type", self.structs_by_index[block["dna_index"]])
             result = b"".join \
               (
-                self.encode_data(item, block_type, encode_ref = encode_ref)
+                self.encode_data(item, block_type, encode_ref = encode_ref, log = log)
                 for item in block["data"]
               )
         else :
@@ -1305,7 +1306,7 @@ class Blenddata :
                     0, # block["dna_index"],
                     1, # block["dna_count"],
                     (
-                        lambda : self.encode_data(block["data"], block["type"], encode_ref = encode_ref),
+                        lambda : self.encode_data(block["data"], block["type"], encode_ref = encode_ref, log = log),
                         lambda : block["rawdata"],
                     )[not block["decoded"] or use_rawdata and "rawdata" in block]()
                   )
