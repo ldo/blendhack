@@ -299,6 +299,7 @@ block_code_order = \
         b"IM\x00\x00", # type Image.
         b"CA\x00\x00", # type Camera.
         b"LA\x00\x00", # type Lamp.
+        b"IK\x00\x00", # type Ika (obsolete).
         b"LT\x00\x00", # type Lattice.
         b"VF\x00\x00", # type VectorFont.
         b"KE\x00\x00", # type Key (shape key).
