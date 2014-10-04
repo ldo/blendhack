@@ -278,6 +278,13 @@ def is_string_type(of_type) :
         type(of_type) == FixedArrayType and type(of_type.EltType) == dict and of_type.EltType["name"] == "char"
 #end is_string_type
 
+def align_adjust(offset, multiple) :
+    "returns amount to add to offset [0 .. multiple - 1] to" \
+    " ensure it can be divided by multiple exactly."
+    return \
+        (multiple - offset % multiple) % multiple
+#end align_adjust
+
 block_code_order = \
     ( # blocks should be written to file in this order to avoid Blender crashes.
       # order taken from write_file_handle routine in source/blender/blenloader/intern/writefile.c.
@@ -445,10 +452,7 @@ class Blenddata :
                 #end if
                 field_align = self.type_align(field["type"])
                 struct_align = max(struct_align, field_align)
-                if struct_size % field_align != 0 :
-                    struct_size += field_align - struct_size % field_align
-                #end if
-                struct_size += field_size
+                struct_size += align_adjust(struct_size, field_align) + field_size
             #end for
             if success :
                 if compute_sizes :
@@ -482,6 +486,17 @@ class Blenddata :
     #end compute_alignments
 
     def decode_sdna(self, sdna_data, log) :
+
+        def align_sdna() :
+            nonlocal sdna_data, data_offset
+            adj = align_adjust(data_offset, 4)
+            if adj != 0 :
+                sdna_data = sdna_data[adj:]
+                data_offset += adj
+            #end if
+        #end align_sdna
+
+    #begin decode_sdna
         "decodes a structure definitions block and saves the results in instance variables."
         sdna_id = sdna_data[:4]
         assert sdna_id == b"SDNA", "invalid DNA block header"
@@ -511,10 +526,7 @@ class Blenddata :
                 data_offset += str_end + 1
                 sdna_data = sdna_data[str_end + 1:]
             #end for
-            if data_offset % 4 != 0 :
-                sdna_data = sdna_data[4 - data_offset % 4:]
-                data_offset += 4 - data_offset % 4
-            #end if
+            align_sdna()
         #end for
         for i in range(len(self.types_by_index)) :
             self.types_by_index[i] = {"name" : self.types_by_index[i], "index" : i}
@@ -541,10 +553,7 @@ class Blenddata :
         #end for
         sdna_data = sdna_data[2 * len(self.types_by_index):]
         data_offset += 2 * len(self.types_by_index)
-        if data_offset % 4 != 0 :
-            sdna_data = sdna_data[4 - data_offset % 4:]
-            data_offset += 4 - data_offset % 4
-        #end if
+        align_sdna()
         assert sdna_data[:4] == b"STRC", "expecting STRC sub-block in DNA block"
         nr_structs = struct.unpack(self.endian + "I", sdna_data[4:8])[0]
         sdna_data = sdna_data[8:]
@@ -633,9 +642,7 @@ class Blenddata :
                 out.write(thisname)
                 offset += len(thisname)
             #end for
-            if offset % 4 != 0 :
-                out.write(b"\0" * (4 - offset % 4))
-            #end if
+            out.write(b"\0" * align_adjust(offset, 4))
         #end for
         out.write(b"TLEN")
         offset = 0
@@ -643,9 +650,7 @@ class Blenddata :
             out.write(struct.pack(self.endian + "H", thistype["size"]))
             offset += 2
         #end for
-        if offset % 4 != 0 :
-            out.write(b"\0" * (4 - offset % 4))
-        #end if
+        out.write(b"\0" * align_adjust(offset, 4))
         out.write(b"STRC" + struct.pack(self.endian + "I", len(structs_by_index)))
         for this_struct in structs_by_index :
             fields = this_struct["fields"]
@@ -710,12 +715,13 @@ class Blenddata :
             for field in datatype["fields"] :
                 field_size = self.type_size(field["type"])
                 field_align = self.type_align(field["type"])
-                if field_offset % field_align != 0 :
+                adj = align_adjust(field_offset, field_align)
+                if adj != 0 :
                     if log != None :
-                        log.write("decode %s: align %s from %d by %d\n" % (datatype["name"], field["name"], field_offset, field_align - field_offset % field_align)) # debug
+                        log.write("decode %s: align %s from %d by %d\n" % (datatype["name"], field["name"], field_offset, adj)) # debug
                     #end if
-                    field_offset += field_align - field_offset % field_align
                 #end if
+                field_offset += adj
                 if field_offset + field_size > len(rawdata) :
                     if log != None :
                         log.write("# need at least %d bytes for %s.%s, only got %d\n" % (field_size, datatype["name"], field["name"], len(rawdata) - field_offset))
@@ -776,12 +782,13 @@ class Blenddata :
             result = b""
             for field in datatype["fields"] :
                 field_align = self.type_align(field["type"])
-                if len(result) % field_align != 0 :
+                adj = align_adjust(len(result), field_align)
+                if adj != 0 :
                     if log != None :
                         log.write("encode %s: align %s from %d by %d\n" % (datatype["name"], field["name"], len(result), field_align - len(result) % field_align)) # debug
                     #end if
-                    result += bytes(field_align - len(result) % field_align)
                 #end if
+                result += bytes(adj)
                 assert type(data) == dict or datatype == self.link_type, "encode_data of non-struct value %s, expected type %s" % (repr(data), repr(datatype))
                 if type(data) == dict :
                     result += self.encode_data \
@@ -1317,7 +1324,7 @@ class Blenddata :
             self.compute_alignments(compute_sizes = True, log = log)
               # Note this does not reprocess the synthesized types for REND and TEST blocks,
               # since these are special-cased on creation and not included in types_by_index.
-              # But that's OK, since they don't contain any pointers.
+              # But that's OK, since they don't contain any pointers or fields requiring alignment.
         #end if
         if big_endian != None :
             self.big_endian = big_endian
