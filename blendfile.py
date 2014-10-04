@@ -960,12 +960,11 @@ class Blenddata :
         block_types = {}
         block_codes_unrefd = None
         block_types_unrefd = None
-        max_name_length = 0
+        max_name_length = max(len(name) for name in self.types)
         for block in self.blocks :
             if block["decoded"] :
                 this_code = block["code"]
                 this_type = type_name(block["type"])
-                max_name_length = max(max_name_length, len(this_type))
                 block_codes[this_code] = block_codes.get(this_code, 0) + 1
                 block_types[this_type] = block_types.get(this_type, 0) + 1
                 if "refs" in block :
@@ -983,7 +982,7 @@ class Blenddata :
             #end if
         #end for
         log.write("\nBlock code counts:\n")
-        for this_code in sorted(block_codes) :
+        for this_code in block_code_order :
             unrefd = block_codes_unrefd.get(this_code, 0)
             log.write \
               (
@@ -997,13 +996,13 @@ class Blenddata :
                 %
                     {
                         "code" : repr(this_code),
-                        "count" : block_codes[this_code],
+                        "count" : block_codes.get(this_code, 0),
                         "unrefd" : unrefd,
                     }
               )
         #end if
         log.write("Block type counts:\n")
-        for this_type in sorted(block_types) :
+        for this_type in sorted(self.types) :
             unrefd = block_types_unrefd.get(this_type, 0)
             log.write \
               (
@@ -1016,8 +1015,8 @@ class Blenddata :
                     )
                 %
                     {
-                        "type" : this_type,
-                        "count" : block_types[this_type],
+                        "type" : this_type + "." * (max_name_length - len(this_type)),
+                        "count" : block_types.get(this_type, 0),
                         "unrefd" : unrefd,
                     }
               )
