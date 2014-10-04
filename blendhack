@@ -60,18 +60,21 @@ opts, args = getopt.getopt \
   (
     sys.argv[1:],
     "",
-    ("bits=", "debug", "endian=", "raw"),
+    ("bits=", "compressed", "debug", "endian=", "raw"),
   )
 if len(args) not in (1, 2) :
     raise getopt.GetoptError("usage: %s blendfile [outfile]" % sys.argv[0])
 #end if
 bit64 = None
 big_endian = None
+compressed = False
 debug = False
 use_rawdata = False
 for keyword, value in opts :
     if keyword == "--bits" :
         bit64 = {32 : False, 64 : True}[int(value)]
+    elif keyword == "--compressed" :
+        compressed = True
     elif keyword == "--debug" :
         debug = True
     elif keyword == "--endian" :
@@ -180,6 +183,7 @@ if len(args) > 1 :
         filename = args[1],
         bit64 = bit64,
         big_endian = big_endian,
+        compressed = compressed,
         encode_ref = lambda block : block["index"],
         use_rawdata = use_rawdata,
         log = log,
