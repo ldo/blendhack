@@ -390,7 +390,7 @@ class Blenddata :
     #     "refcount" -- number of references to this block (optional, only present if count_refs is specified to load)
     #     "type" -- (only if the block contents were decodeable) -- the reference to the structure type of the block contents
 
-    def __init__(self, big_endian = None, pointer_size = None) :
+    def __init__(self, big_endian = None, pointer_size = None, log = None) :
         "args are only important for writing, ignored for reading"
         if big_endian == None :
             big_endian = sys.byteorder == "big"
@@ -402,6 +402,7 @@ class Blenddata :
         self.ptrcode = {4 : "L", 8 : "Q"}[pointer_size]
         self.big_endian = big_endian
         self.endian = {False : "<", True : ">"}[big_endian]
+        self.log = log
     #end __init__
 
     def type_size(self, of_type) :
@@ -436,7 +437,7 @@ class Blenddata :
             result
     #end type_align
 
-    def compute_alignment(self, for_type, compute_sizes = False, log = None) :
+    def compute_alignment(self, for_type, compute_sizes = False) :
         success = True # to begin with
         if is_struct_type(for_type) and for_type["name"] not in self.alignments :
             struct_size = 0
@@ -468,7 +469,7 @@ class Blenddata :
             success
     #end compute_alignment
 
-    def compute_alignments(self, compute_sizes = False, log = None) :
+    def compute_alignments(self, compute_sizes = False) :
         # computes alignments for all structs, and if compute_sizes, recomputes
         # their sizes accordingly, else checks that they match what is computed.
         # Checking alignments on load is helpful to ensure that I can generate
@@ -477,7 +478,7 @@ class Blenddata :
         while True :
             missed_one = False
             for t in self.types_by_index :
-                if not self.compute_alignment(t, compute_sizes = compute_sizes, log = log) :
+                if not self.compute_alignment(t, compute_sizes = compute_sizes) :
                     missed_one = True
                 #end if
             #end for
@@ -486,7 +487,7 @@ class Blenddata :
         #end while
     #end compute_alignments
 
-    def decode_sdna(self, sdna_data, log) :
+    def decode_sdna(self, sdna_data) :
 
         def align_sdna() :
             nonlocal sdna_data, data_offset
@@ -523,7 +524,9 @@ class Blenddata :
             for i in range(nr_names) :
                 str_end = sdna_data.index(b"\0")
                 collect.append(sdna_data[:str_end].decode("utf-8"))
-                log.write("name[%d] = %s\n" % (i, repr(collect[i]))) # debug
+                if self.log != None :
+                    self.log.write("name[%d] = %s\n" % (i, repr(collect[i]))) # debug
+                #end if
                 data_offset += str_end + 1
                 sdna_data = sdna_data[str_end + 1:]
             #end for
@@ -550,7 +553,9 @@ class Blenddata :
               ) \
         :
             self.types_by_index[i]["size"] = s
-            log.write("sizeof(%s) = %d\n" % (self.types_by_index[i]["name"], self.types_by_index[i]["size"])) # debug
+            if self.log != None :
+                self.log.write("sizeof(%s) = %d\n" % (self.types_by_index[i]["name"], self.types_by_index[i]["size"])) # debug
+            #end if
         #end for
         sdna_data = sdna_data[2 * len(self.types_by_index):]
         data_offset += 2 * len(self.types_by_index)
@@ -573,7 +578,9 @@ class Blenddata :
                 else :
                     field_name, field_type = parse_field_type(names[f], self.types_by_index[field_type])
                     fields.append({"type" : field_type, "name" : field_name})
-                    log.write("%s.%s : %s\n" % (self.types_by_index[struct_type]["name"], field_name, type_name(field_type))) # debug
+                    if self.log != None :
+                        self.log.write("%s.%s : %s\n" % (self.types_by_index[struct_type]["name"], field_name, type_name(field_type))) # debug
+                    #end if
                 #end if
             #end for
             self.types_by_index[struct_type]["fields"] = fields
@@ -581,10 +588,12 @@ class Blenddata :
                 self.structs_by_index.extend([None] * (i + 1 - len(self.structs_by_index)))
             #end if
             self.structs_by_index[i] = self.types_by_index[struct_type]
-            log.write("struct[%d] is %s\n" % (i, self.types_by_index[struct_type]["name"])) # debug
+            if self.log != None :
+                self.log.write("struct[%d] is %s\n" % (i, self.types_by_index[struct_type]["name"])) # debug
+            #end if
             sdna_data = sdna_data[4 * nr_fields:]
         #end for
-        self.compute_alignments(log = log)
+        self.compute_alignments()
         self.types = {}
         for t in self.types_by_index :
             assert (t["name"] in primitive_types) <= ("fields" not in t), "primitive type %s must not be struct" % t["name"]
@@ -664,7 +673,7 @@ class Blenddata :
             out.getvalue()
     #end encode_sdna
 
-    def decode_data(self, rawdata, datatype, log = None) :
+    def decode_data(self, rawdata, datatype) :
         # decodes the bytes of rawdata to Python form according to the type datatype.
         if type(datatype) == PointerType :
             assert len(rawdata) == self.ptrsize, "expecting pointer to be %d bytes, got %d" % (self.ptrsize, len(rawdata))
@@ -686,7 +695,7 @@ class Blenddata :
             elt_size = self.type_size(datatype.EltType)
             assert len(rawdata) == elt_size * datatype.NrElts
             for i in range(datatype.NrElts) :
-                result.append(self.decode_data(rawdata[i * elt_size : (i + 1) * elt_size], datatype.EltType, log))
+                result.append(self.decode_data(rawdata[i * elt_size : (i + 1) * elt_size], datatype.EltType))
             #end for
             if datatype.EltType == self.types["char"] :
                 # prettier display
@@ -716,21 +725,21 @@ class Blenddata :
             for field in datatype["fields"] :
                 field_size = self.type_size(field["type"])
                 field_align = self.type_align(field["type"])
-                if log != None :
+                if self.log != None :
                     adj = align_adjust(field_offset, field_align)
                     if adj != 0 :
-                        log.write("decode %s: align %s from %d by %d\n" % (datatype["name"], field["name"], field_offset, adj)) # debug
+                        self.log.write("decode %s: align %s from %d by %d\n" % (datatype["name"], field["name"], field_offset, adj)) # debug
                     #end if
                 #end if
                 field_offset += align_adjust(field_offset, field_align)
                 if field_offset + field_size > len(rawdata) :
-                    if log != None :
-                        log.write("# need at least %d bytes for %s.%s, only got %d\n" % (field_size, datatype["name"], field["name"], len(rawdata) - field_offset))
+                    if self.log != None :
+                        self.log.write("# need at least %d bytes for %s.%s, only got %d\n" % (field_size, datatype["name"], field["name"], len(rawdata) - field_offset))
                     #end if
                     field_offset = len(rawdata) # ignore rest
                     break
                 #end if
-                result[field["name"]] = self.decode_data(rawdata[field_offset : field_offset + field_size], field["type"], log)
+                result[field["name"]] = self.decode_data(rawdata[field_offset : field_offset + field_size], field["type"])
                 field_offset += field_size
             #end for
             assert field_offset == len(rawdata), "leftover data after decoding %s struct" % datatype["name"]
@@ -741,7 +750,7 @@ class Blenddata :
 
     default_encode_ref = lambda block : block["oldaddr"]
 
-    def encode_data(self, data, datatype, encode_ref = default_encode_ref, log = None) :
+    def encode_data(self, data, datatype, encode_ref = default_encode_ref) :
         if type(datatype) == PointerType :
             # oldaddress isn't actually important
             if data == None :
@@ -766,7 +775,7 @@ class Blenddata :
             else :
                 result = b"".join \
                   (
-                    self.encode_data(i, datatype.EltType, encode_ref = encode_ref, log = log) for i in data
+                    self.encode_data(i, datatype.EltType, encode_ref = encode_ref) for i in data
                   )
             #end if
             if datatype.EltType == self.types["char"] :
@@ -783,10 +792,10 @@ class Blenddata :
             result = b""
             for field in datatype["fields"] :
                 field_align = self.type_align(field["type"])
-                if log != None :
+                if self.log != None :
                     adj = align_adjust(len(result), field_align)
                     if adj != 0 :
-                        log.write("encode %s: align %s from %d by %d\n" % (datatype["name"], field["name"], len(result), field_align - len(result) % field_align)) # debug
+                        self.log.write("encode %s: align %s from %d by %d\n" % (datatype["name"], field["name"], len(result), field_align - len(result) % field_align)) # debug
                     #end if
                 #end if
                 result += bytes(align_adjust(len(result), field_align))
@@ -796,8 +805,7 @@ class Blenddata :
                       (
                         (data.__getitem__, data.get)[datatype == self.link_type](field["name"]),
                         field["type"],
-                        encode_ref = encode_ref,
-                        log = log
+                        encode_ref = encode_ref
                       )
                 else :
                     raise RuntimeError("don't know how to encode item %s as %s" % (repr(data), repr(datatype)))
@@ -808,13 +816,13 @@ class Blenddata :
             result
     #end encode_data
 
-    def encode_block(self, block, encode_ref = default_encode_ref, log = None) :
+    def encode_block(self, block, encode_ref = default_encode_ref) :
         # encodes the specified block contents to raw data and returns it.
         if block["decoded"] :
             block_type = block.get("override_type", self.structs_by_index[block["dna_index"]])
             result = b"".join \
               (
-                self.encode_data(item, block_type, encode_ref = encode_ref, log = log)
+                self.encode_data(item, block_type, encode_ref = encode_ref)
                 for item in block["data"]
               )
         else :
@@ -824,7 +832,7 @@ class Blenddata :
             result
     #end encode_block
 
-    def scan_block(self, referrer, referrer_type, referrer_type_name, selector, block, action, encode_ref, log = None) :
+    def scan_block(self, referrer, referrer_type, referrer_type_name, selector, block, action, encode_ref) :
         # invokes action(referrer, selector, block) on the specified block, followed by
         # all (indirectly or directly) referenced blocks. Traversal stops if action returns
         # False.
@@ -851,8 +859,8 @@ class Blenddata :
 
                 def check_array() :
                     # debug
-                    if log != None and len(item) != itemtype.NrElts :
-                        log.write("array %s has %d elts, expected %d\n" % (repr(item), len(item), itemtype.NrElts))
+                    if self.log != None and len(item) != itemtype.NrElts :
+                        self.log.write("array %s has %d elts, expected %d\n" % (repr(item), len(item), itemtype.NrElts))
                     #end if
                     #end debug
                     for i in range(itemtype.NrElts) :
@@ -890,8 +898,8 @@ class Blenddata :
                 scan_recurse_depth += 1
                 if scan_recurse_depth > max_scan_recurse_depth :
                     max_scan_recurse_depth = scan_recurse_depth
-                    if log != None :
-                        log.write("scan block %d at depth %d\n" % (block["index"], scan_recurse_depth)) # debug
+                    if self.log != None :
+                        self.log.write("scan block %d at depth %d\n" % (block["index"], scan_recurse_depth)) # debug
                     #end if
                 #end if
                 scanned.add(block_ref)
@@ -920,7 +928,7 @@ class Blenddata :
         scan_block_recurse(referrer, referrer_type, referrer_type_name, selector, block, action)
     #end scan_block
 
-    def decode_block(self, block, block_type, dna_count = None, log = None) :
+    def decode_block(self, block, block_type, dna_count = None) :
         block["type"] = block_type
         type_size = self.type_size(block_type)
         decoded = []
@@ -933,14 +941,15 @@ class Blenddata :
                 self.decode_data
                   (
                     block["rawdata"][j * type_size : (j + 1) * type_size],
-                    block_type,
-                    log
+                    block_type
                   )
               )
         #end for
         leftover = max(len(block["rawdata"]) - type_size * dna_count, 0)
         if leftover > 0 :
-            log.write("# ignoring %d bytes at end of block[%d] size %d//%d type %s size %d\n" % (leftover, block["index"], len(block["rawdata"]), dna_count, repr(block_type), type_size))
+            if self.log != None :
+                self.log.write("# ignoring %d bytes at end of block[%d] size %d//%d type %s size %d\n" % (leftover, block["index"], len(block["rawdata"]), dna_count, repr(block_type), type_size))
+            #end if
         #end if
         block["data"] = decoded
         block["decoded"] = True
@@ -964,7 +973,7 @@ class Blenddata :
             )
     #end construct_block
 
-    def dump_counts(self, log) :
+    def dump_counts(self) :
         # debug--dumps some stats about block types.
         block_codes = {}
         block_types = {}
@@ -991,10 +1000,10 @@ class Blenddata :
                 #end if
             #end if
         #end for
-        log.write("\nBlock code counts:\n")
+        self.log.write("\nBlock code counts:\n")
         for this_code in block_code_order :
             unrefd = block_codes_unrefd.get(this_code, 0)
-            log.write \
+            self.log.write \
               (
                     (
                         "    %(code)-19s %(count)d"
@@ -1011,10 +1020,10 @@ class Blenddata :
                     }
               )
         #end if
-        log.write("Block type counts:\n")
+        self.log.write("Block type counts:\n")
         for this_type in sorted(self.types) :
             unrefd = block_types_unrefd.get(this_type, 0)
-            log.write \
+            self.log.write \
               (
                     (
                         "    %%(type)-%ds %%(count)d" % max_name_length
@@ -1033,7 +1042,7 @@ class Blenddata :
         #end for
     #end dump_counts
 
-    def load(self, filename, keep_rawdata = False, count_refs = False, log = None) :
+    def load(self, filename, keep_rawdata = False, count_refs = False) :
         "loads the contents of the specified .blend file."
 
         encode_ref = self.__class__.default_encode_ref # good enough
@@ -1061,10 +1070,12 @@ class Blenddata :
                         type_size = 1
                     #end if
                     dna_count = len(block["rawdata"]) // self.type_size(block_type)
-                    log.write("decoding untyped block[%d] as %s[%d]\n" % (block["index"], referrer_type_name, dna_count)) # debug
+                    if self.log != None :
+                        self.log.write("decoding untyped block[%d] as %s[%d]\n" % (block["index"], referrer_type_name, dna_count)) # debug
+                    #end if
                     block["override_type"] = block_type
-                    self.decode_block(block, block_type, dna_count = dna_count, log = log)
-                    self.scan_block(referrer, referrer_type, referrer_type_name, selector, block, decode_block_action, encode_ref, log)
+                    self.decode_block(block, block_type, dna_count = dna_count)
+                    self.scan_block(referrer, referrer_type, referrer_type_name, selector, block, decode_block_action, encode_ref)
                       # in case it points to further undecoded blocks
                 #end if
                 return \
@@ -1072,15 +1083,10 @@ class Blenddata :
             #end decode_block_action
 
         #begin decode_untyped_blocks
-            self.scan_block(None, None, None, None, self.global_block, decode_block_action, encode_ref, log)
+            self.scan_block(None, None, None, None, self.global_block, decode_block_action, encode_ref)
         #end decode_untyped_blocks
 
     #begin load
-        openlog = None
-        if log == None :
-            openlog = open("/dev/null", "w")
-            log = openlog
-        #end if
         origfd = open(filename, "rb")
         sig = origfd.read(2)
         origfd.seek(0)
@@ -1097,7 +1103,9 @@ class Blenddata :
         self.ptrcode = {b"_" : "L", b"-" : "Q"}[ptrcode]
         self.endian = {b"v" : "<", b"V" : ">"}[endiancode]
         self.big_endian = endiancode == b"V"
-        log.write("File Blender version = %s, ptrsize = %d, endian = %s\n" % (repr(self.version), self.ptrsize, ("little", "big")[endiancode == b"V"]))
+        if self.log != None :
+            self.log.write("File Blender version = %s, ptrsize = %d, endian = %s\n" % (repr(self.version), self.ptrsize, ("little", "big")[endiancode == b"V"]))
+        #end if
         self.blocks = []
         self.blocks_by_oldaddress = {}
         self.global_block = None
@@ -1120,10 +1128,12 @@ class Blenddata :
             #end if
             datasize, oldaddr, dna_index, dna_count = \
                 structread(fd, "%sI%sII" % (self.endian, self.ptrcode))
-            log.write("block[%d] at 0x%08x code = %s, datasize = %d, oldaddr = 0x%x, dna_index = %d, dna_count = %d\n" % (len(self.blocks), fd.tell(), blockcode, datasize, oldaddr, dna_index, dna_count)) # debug
+            if self.log != None :
+                self.log.write("block[%d] at 0x%08x code = %s, datasize = %d, oldaddr = 0x%x, dna_index = %d, dna_count = %d\n" % (len(self.blocks), fd.tell(), blockcode, datasize, oldaddr, dna_index, dna_count)) # debug
+            #end if
             if blockcode == b"DNA1" :
                 assert not sdna_seen, "duplicate SDNA blocks"
-                self.decode_sdna(fd.read(datasize), log)
+                self.decode_sdna(fd.read(datasize))
                 sdna_seen = True
             else :
                 assert not sdna_seen, "data blocks after SDNA block"
@@ -1181,8 +1191,8 @@ class Blenddata :
                                 },
                             ],
                     }
-                self.compute_alignment(block["type"], compute_sizes = True, log = log)
-                block["data"] = self.decode_data(block["rawdata"], block["type"], log = log)
+                self.compute_alignment(block["type"], compute_sizes = True)
+                block["data"] = self.decode_data(block["rawdata"], block["type"])
                 block["decoded"] = True
             elif block["code"] == b"TEST" :
                 width, height = struct.unpack(self.endian + "ii", block["rawdata"][:8])
@@ -1200,13 +1210,13 @@ class Blenddata :
                                 },
                             ],
                     }
-                self.compute_alignment(block["type"], compute_sizes = True, log = log)
-                block["data"] = self.decode_data(block["rawdata"], block["type"], log = log)
+                self.compute_alignment(block["type"], compute_sizes = True)
+                block["data"] = self.decode_data(block["rawdata"], block["type"])
                 block["decoded"] = True
             elif block_type != self.link_type :
               # blocks of Link type are left to decode_untyped_blocks,
               # because they do not seem to actually be of Link type.
-                self.decode_block(block, block_type, log = log)
+                self.decode_block(block, block_type)
             else :
                 block["decoded"] = False
             #end if
@@ -1215,10 +1225,8 @@ class Blenddata :
             #end if
         #end for
         decode_untyped_blocks()
-        self.dump_counts(log) # debug
-        if openlog != None :
-            openlog.flush()
-            openlog.close()
+        if self.log != None :
+            self.dump_counts() # debug
         #end if
         return \
             self
@@ -1235,7 +1243,6 @@ class Blenddata :
           # can be True or False to force big/little-endian, None to leave at default
         encode_ref = default_encode_ref,
         use_rawdata = False,
-        log = None,
       ) :
         "saves the contents into a .blend file."
 
@@ -1254,9 +1261,9 @@ class Blenddata :
             #end referenced_action
 
         #begin find_referenced
-            self.scan_block(None, None, None, None, self.global_block, referenced_action, encode_ref, log)
+            self.scan_block(None, None, None, None, self.global_block, referenced_action, encode_ref)
             if self.user_prefs_block != None :
-                self.scan_block(None, None, None, None, self.user_prefs_block, referenced_action, encode_ref, log)
+                self.scan_block(None, None, None, None, self.user_prefs_block, referenced_action, encode_ref)
             #end if
         #end find_referenced
 
@@ -1285,7 +1292,7 @@ class Blenddata :
                             block["dna_index"],
                             block["dna_count"],
                             (
-                                lambda : self.encode_block(block, encode_ref = encode_ref, log = log),
+                                lambda : self.encode_block(block, encode_ref = encode_ref),
                                 lambda : block["rawdata"],
                             )[not block["decoded"] or use_rawdata and "rawdata" in block]()
                           )
@@ -1296,7 +1303,7 @@ class Blenddata :
             #end save_action
 
         #begin save_block
-            self.scan_block(None, None, None, None, block, save_action, encode_ref, log)
+            self.scan_block(None, None, None, None, block, save_action, encode_ref)
         #end save_block
 
         def save_special_block(block) :
@@ -1309,7 +1316,7 @@ class Blenddata :
                     0, # block["dna_index"],
                     1, # block["dna_count"],
                     (
-                        lambda : self.encode_data(block["data"], block["type"], encode_ref = encode_ref, log = log),
+                        lambda : self.encode_data(block["data"], block["type"], encode_ref = encode_ref),
                         lambda : block["rawdata"],
                     )[not block["decoded"] or use_rawdata and "rawdata" in block]()
                   )
@@ -1317,15 +1324,10 @@ class Blenddata :
         #end save_special_block
 
     #begin save
-        openlog = None
-        if log == None :
-            openlog = open("/dev/null", "w")
-            log = openlog
-        #end if
         if bit64 != None :
             self.ptrsize = [4, 8][bit64]
             self.ptrcode = {4 : "L", 8 : "Q"}[self.ptrsize]
-            self.compute_alignments(compute_sizes = True, log = log)
+            self.compute_alignments(compute_sizes = True)
               # Note this does not reprocess the synthesized types for REND and TEST blocks,
               # since these are special-cased on creation and not included in types_by_index.
               # But that's OK, since they don't contain any pointers or fields requiring alignment.
@@ -1373,10 +1375,6 @@ class Blenddata :
           )
         outfile.flush()
         outfile.close()
-        if openlog != None :
-            openlog.flush()
-            openlog.close()
-        #end if
         return \
             self
     #end save
