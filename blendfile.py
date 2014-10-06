@@ -364,6 +364,8 @@ class Blenddata :
     #         "USER" block, if any
     #     version --
     #         3-character version code from file header
+    #     window_manager_block --
+    #         "DATA" block of type wmWindowManager
 
     # Struct (non-primitive) types will be found in structs_by_index, types and types_by_index;
     # primitive types only in the latter two. Non-pointer/array/method types are represented
@@ -1113,6 +1115,7 @@ class Blenddata :
         self.renderinfo_block = None
         self.thumbnail_block = None
         self.user_prefs_block = None
+        self.window_manager_block = None
         sdna_seen = False
         while True :
             # collect all the blocks
@@ -1218,6 +1221,10 @@ class Blenddata :
               # blocks of Link type are left to decode_untyped_blocks,
               # because they do not seem to actually be of Link type.
                 self.decode_block(block, block_type)
+                if type_name(block_type) == "wmWindowManager" :
+                    assert self.window_manager_block == None, "more than one wmWindowManager block found"
+                    self.window_manager_block = block
+                #end if
             else :
                 block["decoded"] = False
             #end if
@@ -1263,9 +1270,12 @@ class Blenddata :
 
         #begin find_referenced
             self.scan_block(None, None, None, None, self.global_block, referenced_action, encode_ref)
-            if self.user_prefs_block != None :
-                self.scan_block(None, None, None, None, self.user_prefs_block, referenced_action, encode_ref)
-            #end if
+            for extra_block in (self.window_manager_block, self.user_prefs_block) :
+              # extra blocks that need to be saved, even if there are no explicit references to them from anywhere else
+                if extra_block != None :
+                    self.scan_block(None, None, None, None, extra_block, referenced_action, encode_ref)
+                #end if
+            #end for
         #end find_referenced
 
         def save_block(block) :
