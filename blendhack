@@ -95,7 +95,7 @@ if log != None :
             log.write("* block[%d](%s)[%s]@%#x : %s[%d]\n" % (i, repr(block["code"]), len(block.get("rawdata", "")), block["oldaddr"], blendfile.type_name(block["type"]), block["dna_count"])) # debug
             referrers = block.get("refs")
             if referrers != None and len(referrers) != 0 :
-                log.write(" refs: ")
+                log.write(" refs(%d): " % len(referrers))
                 first = True
                 for referrer in referrers :
                     if len(referrer) != 0 :
