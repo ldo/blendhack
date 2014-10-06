@@ -93,7 +93,7 @@ if log != None :
     for i, block in enumerate(blend.blocks) :
         if block["decoded"] :
             log.write("block[%d](%s)[%s]@%#x : %s[%d]\n" % (i, repr(block["code"]), len(block.get("rawdata", "")), block["oldaddr"], blendfile.type_name(block["type"]), block["dna_count"])) # debug
-            if block.get("refs") == 0 :
+            if block.get("refcount") == 0 :
                 log.write(" - no refs to this block\n")
             #end if
             if type(block["data"]) in (tuple, list) :

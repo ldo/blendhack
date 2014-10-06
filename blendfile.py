@@ -387,7 +387,7 @@ class Blenddata :
     #     "oldaddr" -- the saved in-memory address of the block
     #     "override_type" -- if present, contents were decoded according to this type (dna_index should be 0)
     #     "rawdata" -- the raw, undecoded data (only kept if keep_rawdata is specified to load)
-    #     "refs" -- number of references to this block (optional, only present if count_refs is specified to load)
+    #     "refcount" -- number of references to this block (optional, only present if count_refs is specified to load)
     #     "type" -- (only if the block contents were decodeable) -- the reference to the structure type of the block contents
 
     def __init__(self, big_endian = None, pointer_size = None) :
@@ -674,8 +674,8 @@ class Blenddata :
             elif oldaddress in self.blocks_by_oldaddress :
                 # result = self.blocks_by_oldaddress[oldaddress]
                 the_block = self.blocks_by_oldaddress[oldaddress]
-                if "refs" in the_block :
-                    the_block["refs"] += 1
+                if "refcount" in the_block :
+                    the_block["refcount"] += 1
                 #end if
                 result = BlockRef(the_block)
             else :
@@ -977,14 +977,14 @@ class Blenddata :
                 this_type = type_name(block["type"])
                 block_codes[this_code] = block_codes.get(this_code, 0) + 1
                 block_types[this_type] = block_types.get(this_type, 0) + 1
-                if "refs" in block :
+                if "refcount" in block :
                     if block_codes_unrefd == None :
                         block_codes_unrefd = {}
                     #end if
                     if block_types_unrefd == None :
                         block_types_unrefd = {}
                     #end if
-                    if block["refs"] == 0 :
+                    if block["refcount"] == 0 :
                         block_codes_unrefd[this_code] = block_codes_unrefd.get(this_code, 0) + 1
                         block_types_unrefd[this_type] = block_types_unrefd.get(this_type, 0) + 1
                     #end if
@@ -1138,7 +1138,7 @@ class Blenddata :
                         "index" : len(self.blocks),
                     }
                 if count_refs :
-                    new_block["refs"] = 0
+                    new_block["refcount"] = 0
                 #end if
                 if blockcode == b"GLOB" :
                     assert self.global_block == None, "multiple GLOB blocks found"
