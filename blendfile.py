@@ -824,7 +824,7 @@ class Blenddata :
             result
     #end encode_block
 
-    def scan_block(self, referrer, referrer_type, selector, block, action, encode_ref, log = None) :
+    def scan_block(self, referrer, referrer_type, referrer_type_name, selector, block, action, encode_ref, log = None) :
         # invokes action(referrer, selector, block) on the specified block, followed by
         # all (indirectly or directly) referenced blocks. Traversal stops if action returns
         # False.
@@ -834,18 +834,18 @@ class Blenddata :
 
         scanned = set() # blocks that have already been scanned
 
-        def scan_block_recurse(referrer, referrer_type, selector, block, action) :
+        def scan_block_recurse(referrer, referrer_type, referrer_type_name, selector, block, action) :
             # invokes action on the specified block, followed by all (indirectly or directly)
             # referenced blocks that haven't already been scanned.
 
             nonlocal scan_recurse_depth, max_scan_recurse_depth
 
-            def check_item(referrer, referrer_type, selector, item, itemtype) :
+            def check_item(referrer, referrer_type, referrer_type_name, selector, item, itemtype) :
 
                 def check_scan_ref() :
                     # assume at most one level of pointer indirection!
                     if type(item) == BlockRef :
-                        scan_block_recurse(referrer, referrer_type, selector, item.block, action)
+                        scan_block_recurse(referrer, referrer_type, referrer_type_name, selector, item.block, action)
                     #end if
                 #end check_scan_ref
 
@@ -856,7 +856,7 @@ class Blenddata :
                     #end if
                     #end debug
                     for i in range(itemtype.NrElts) :
-                        check_item(item, itemtype, i, item[i], itemtype.EltType)
+                        check_item(item, itemtype, type_name(itemtype), i, item[i], itemtype.EltType)
                     #end for
                 #end check_array
 
@@ -866,7 +866,7 @@ class Blenddata :
                         for field in itemtype["fields"] :
                             fieldval = (item.__getitem__, item.get)[itemtype == self.link_type](field["name"])
                             if fieldval != None :
-                                check_item(item, itemtype, field, fieldval, field["type"])
+                                check_item(item, itemtype, type_name(field["type"]), field, fieldval, field["type"])
                             #end if
                         #end for
                     #end if
@@ -895,12 +895,13 @@ class Blenddata :
                     #end if
                 #end if
                 scanned.add(block_ref)
-                if action(referrer, referrer_type, selector, block) :
+                if action(referrer, referrer_type, referrer_type_name, selector, block) :
                     if block["decoded"] :
                         check_item \
                           (
                             referrer,
                             referrer_type,
+                            referrer_type_name,
                             selector,
                             block["data"],
                             FixedArrayType
@@ -916,7 +917,7 @@ class Blenddata :
         #end scan_block_recurse
 
     #begin scan_block
-        scan_block_recurse(referrer, referrer_type, selector, block, action)
+        scan_block_recurse(referrer, referrer_type, referrer_type_name, selector, block, action)
     #end scan_block
 
     def decode_block(self, block, block_type, dna_count = None, log = None) :
@@ -1041,13 +1042,14 @@ class Blenddata :
           # tries to determine types of undecoded blocks by expected types of
           # pointers to them
 
-            def decode_block_action(referrer, referrer_type, selector, block) :
+            def decode_block_action(referrer, referrer_type, referrer_type_name, selector, block) :
                 if not block["decoded"] :
-                    assert referrer != None and referrer_type != None and selector != None, \
+                    assert referrer != None and referrer_type != None and referrer_type_name != None and selector != None, \
                         "undecoded top-level block!?"
                     block_type = None
                     if type(referrer_type) == FixedArrayType :
                         block_type = referrer_type.EltType
+                        referrer_type_name = "*" + referrer_type_name
                     elif is_struct_type(referrer_type) :
                         block_type = selector["type"]
                     #end if
@@ -1059,10 +1061,10 @@ class Blenddata :
                         type_size = 1
                     #end if
                     dna_count = len(block["rawdata"]) // self.type_size(block_type)
-                    log.write("decoding untyped block[%d] as %s [%d]\n" % (block["index"], repr(block_type), dna_count)) # debug
+                    log.write("decoding untyped block[%d] as %s[%d]\n" % (block["index"], referrer_type_name, dna_count)) # debug
                     block["override_type"] = block_type
                     self.decode_block(block, block_type, dna_count = dna_count, log = log)
-                    self.scan_block(referrer, referrer_type, selector, block, decode_block_action, encode_ref, log)
+                    self.scan_block(referrer, referrer_type, referrer_type_name, selector, block, decode_block_action, encode_ref, log)
                       # in case it points to further undecoded blocks
                 #end if
                 return \
@@ -1070,7 +1072,7 @@ class Blenddata :
             #end decode_block_action
 
         #begin decode_untyped_blocks
-            self.scan_block(None, None, None, self.global_block, decode_block_action, encode_ref, log)
+            self.scan_block(None, None, None, None, self.global_block, decode_block_action, encode_ref, log)
         #end decode_untyped_blocks
 
     #begin load
@@ -1243,7 +1245,7 @@ class Blenddata :
         def find_referenced() :
             # marks all specially-coded blocks needing saving.
 
-            def referenced_action(referrer, referrer_type, selector, block) :
+            def referenced_action(referrer, referrer_type, referrer_type_name, selector, block) :
                 if block["code"] != b"DATA" :
                     referenced.add(encode_ref(block))
                 #end if
@@ -1252,9 +1254,9 @@ class Blenddata :
             #end referenced_action
 
         #begin find_referenced
-            self.scan_block(None, None, None, self.global_block, referenced_action, encode_ref, log)
+            self.scan_block(None, None, None, None, self.global_block, referenced_action, encode_ref, log)
             if self.user_prefs_block != None :
-                self.scan_block(None, None, None, self.user_prefs_block, referenced_action, encode_ref, log)
+                self.scan_block(None, None, None, None, self.user_prefs_block, referenced_action, encode_ref, log)
             #end if
         #end find_referenced
 
@@ -1264,7 +1266,7 @@ class Blenddata :
 
             done_coded = False
 
-            def save_action(referrer, referrer_type, selector, block) :
+            def save_action(referrer, referrer_type, referre_type_name, selector, block) :
                 nonlocal done_coded
                 block_ref = encode_ref(block)
                 doit = block_ref not in saved and (block["code"] == b"DATA" or not done_coded)
@@ -1294,7 +1296,7 @@ class Blenddata :
             #end save_action
 
         #begin save_block
-            self.scan_block(None, None, None, block, save_action, encode_ref, log)
+            self.scan_block(None, None, None, None, block, save_action, encode_ref, log)
         #end save_block
 
         def save_special_block(block) :
