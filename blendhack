@@ -92,8 +92,35 @@ blend = blendfile.Blenddata(log = log).load(args[0], keep_rawdata = use_rawdata,
 if log != None :
     for i, block in enumerate(blend.blocks) :
         if block["decoded"] :
-            log.write("block[%d](%s)[%s]@%#x : %s[%d]\n" % (i, repr(block["code"]), len(block.get("rawdata", "")), block["oldaddr"], blendfile.type_name(block["type"]), block["dna_count"])) # debug
-            if block.get("refcount") == 0 :
+            log.write("* block[%d](%s)[%s]@%#x : %s[%d]\n" % (i, repr(block["code"]), len(block.get("rawdata", "")), block["oldaddr"], blendfile.type_name(block["type"]), block["dna_count"])) # debug
+            referrers = block.get("refs")
+            if referrers != None and len(referrers) != 0 :
+                log.write(" refs: ")
+                first = True
+                for referrer in referrers :
+                    if len(referrer) != 0 :
+                        assert type(referrer[0]) == dict, "referrer does not begin with block dict"
+                        if first :
+                            first = False
+                        else :
+                            log.write(", ")
+                        #end if
+                        log.write("block[%d]" % referrer[0]["index"])
+                        for elt in referrer[1:] :
+                            if type(elt) == int :
+                                log.write("[%d]" % elt)
+                            elif type(elt) == str :
+                                log.write("." + elt)
+                            else :
+                                raise AssertionError("type of %s not int index or string field name" % repr(elt))
+                            #end if
+                        #end for
+                    else :
+                        log.write("()")
+                    #end if
+                #end for
+                log.write("\n")
+            else :
                 log.write(" - no refs to this block\n")
             #end if
             if type(block["data"]) in (tuple, list) :

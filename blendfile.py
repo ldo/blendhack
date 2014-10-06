@@ -387,7 +387,7 @@ class Blenddata :
     #     "oldaddr" -- the saved in-memory address of the block
     #     "override_type" -- if present, contents were decoded according to this type (dna_index should be 0)
     #     "rawdata" -- the raw, undecoded data (only kept if keep_rawdata is specified to load)
-    #     "refcount" -- number of references to this block (optional, only present if count_refs is specified to load)
+    #     "refs" -- list of references to this block (optional, only present if count_refs is specified to load)
     #     "type" -- (only if the block contents were decodeable) -- the reference to the structure type of the block contents
 
     def __init__(self, big_endian = None, pointer_size = None, log = None) :
@@ -673,7 +673,7 @@ class Blenddata :
             out.getvalue()
     #end encode_sdna
 
-    def decode_data(self, rawdata, datatype) :
+    def decode_data(self, referrer, rawdata, datatype) :
         # decodes the bytes of rawdata to Python form according to the type datatype.
         if type(datatype) == PointerType :
             assert len(rawdata) == self.ptrsize, "expecting pointer to be %d bytes, got %d" % (self.ptrsize, len(rawdata))
@@ -683,8 +683,8 @@ class Blenddata :
             elif oldaddress in self.blocks_by_oldaddress :
                 # result = self.blocks_by_oldaddress[oldaddress]
                 the_block = self.blocks_by_oldaddress[oldaddress]
-                if "refcount" in the_block :
-                    the_block["refcount"] += 1
+                if "refs" in the_block :
+                    the_block["refs"].append(referrer)
                 #end if
                 result = BlockRef(the_block)
             else :
@@ -695,7 +695,7 @@ class Blenddata :
             elt_size = self.type_size(datatype.EltType)
             assert len(rawdata) == elt_size * datatype.NrElts
             for i in range(datatype.NrElts) :
-                result.append(self.decode_data(rawdata[i * elt_size : (i + 1) * elt_size], datatype.EltType))
+                result.append(self.decode_data(referrer + (i,), rawdata[i * elt_size : (i + 1) * elt_size], datatype.EltType))
             #end for
             if datatype.EltType == self.types["char"] :
                 # prettier display
@@ -739,7 +739,7 @@ class Blenddata :
                     field_offset = len(rawdata) # ignore rest
                     break
                 #end if
-                result[field["name"]] = self.decode_data(rawdata[field_offset : field_offset + field_size], field["type"])
+                result[field["name"]] = self.decode_data(referrer + (field["name"],), rawdata[field_offset : field_offset + field_size], field["type"])
                 field_offset += field_size
             #end for
             assert field_offset == len(rawdata), "leftover data after decoding %s struct" % datatype["name"]
@@ -940,6 +940,7 @@ class Blenddata :
               (
                 self.decode_data
                   (
+                    (block, j),
                     block["rawdata"][j * type_size : (j + 1) * type_size],
                     block_type
                   )
@@ -986,14 +987,14 @@ class Blenddata :
                 this_type = type_name(block["type"])
                 block_codes[this_code] = block_codes.get(this_code, 0) + 1
                 block_types[this_type] = block_types.get(this_type, 0) + 1
-                if "refcount" in block :
+                if "refs" in block :
                     if block_codes_unrefd == None :
                         block_codes_unrefd = {}
                     #end if
                     if block_types_unrefd == None :
                         block_types_unrefd = {}
                     #end if
-                    if block["refcount"] == 0 :
+                    if len(block["refs"]) == 0 :
                         block_codes_unrefd[this_code] = block_codes_unrefd.get(this_code, 0) + 1
                         block_types_unrefd[this_type] = block_types_unrefd.get(this_type, 0) + 1
                     #end if
@@ -1148,7 +1149,7 @@ class Blenddata :
                         "index" : len(self.blocks),
                     }
                 if count_refs :
-                    new_block["refcount"] = 0
+                    new_block["refs"] = []
                 #end if
                 if blockcode == b"GLOB" :
                     assert self.global_block == None, "multiple GLOB blocks found"
@@ -1192,7 +1193,7 @@ class Blenddata :
                             ],
                     }
                 self.compute_alignment(block["type"], compute_sizes = True)
-                block["data"] = self.decode_data(block["rawdata"], block["type"])
+                block["data"] = self.decode_data((), block["rawdata"], block["type"])
                 block["decoded"] = True
             elif block["code"] == b"TEST" :
                 width, height = struct.unpack(self.endian + "ii", block["rawdata"][:8])
@@ -1211,7 +1212,7 @@ class Blenddata :
                             ],
                     }
                 self.compute_alignment(block["type"], compute_sizes = True)
-                block["data"] = self.decode_data(block["rawdata"], block["type"])
+                block["data"] = self.decode_data((), block["rawdata"], block["type"])
                 block["decoded"] = True
             elif block_type != self.link_type :
               # blocks of Link type are left to decode_untyped_blocks,
