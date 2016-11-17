@@ -490,6 +490,7 @@ class Blenddata :
     #end compute_alignments
 
     def decode_sdna(self, sdna_data) :
+        "decodes a structure definitions block and saves the results in instance variables."
 
         def align_sdna() :
             nonlocal sdna_data, data_offset
@@ -501,7 +502,6 @@ class Blenddata :
         #end align_sdna
 
     #begin decode_sdna
-        "decodes a structure definitions block and saves the results in instance variables."
         sdna_id = sdna_data[:4]
         assert sdna_id == b"SDNA", "invalid DNA block header"
         sdna_data = sdna_data[4:]
