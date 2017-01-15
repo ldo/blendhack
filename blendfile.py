@@ -1095,9 +1095,11 @@ class Blenddata :
         origfd.seek(0)
         if sig == b"\x1F\x8B" :
             fd = gzip.GzipFile(mode = "r", fileobj = origfd)
+            self.compressed = True
         else :
             fd = origfd
             origfd = None
+            self.compressed = False
         #end if
         known_block_codes = frozenset(block_code_order)
         sig, ptrcode, endiancode, self.version = structread(fd, "7s1s1s3s") # note not endian-dependent
