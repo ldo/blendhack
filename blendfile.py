@@ -1176,7 +1176,7 @@ class Blenddata :
             origfd.close()
         #end if
         assert self.global_block != None, "missing GLOB block"
-        for i, block in enumerate(self.blocks) :
+        for block in self.blocks :
             block_type = self.structs_by_index[block["dna_index"]]
             if block["code"] == b"REND" :
                 block["type"] = \
