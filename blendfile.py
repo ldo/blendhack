@@ -918,7 +918,7 @@ class Blenddata :
                             block["data"],
                             FixedArrayType
                               (
-                                self.structs_by_index[block["dna_index"]],
+                                block.get("override_type", self.structs_by_index[block["dna_index"]]),
                                 len(block["data"])
                               )
                           )
