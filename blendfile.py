@@ -1263,9 +1263,7 @@ class Blenddata :
             # marks all specially-coded blocks needing saving.
 
             def referenced_action(referrer, referrer_type, referrer_type_name, selector, block) :
-                if block["code"] != b"DATA" :
-                    referenced.add(encode_ref(block))
-                #end if
+                referenced.add(encode_ref(block))
                 return \
                     True
             #end referenced_action
