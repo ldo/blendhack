@@ -51,6 +51,7 @@
 #     * blocks with code "IP\x00\x00", type Ipo (obsolete, replaced by FCurves in DATA blocks).
 #     * blocks with code "LS\x00\x00", type FreestyleLineStyle.
 #     * blocks with code "LI\x00\x00", type Library.
+#     * blocks with code "CF\x00\x00", type CacheFile.
 #     * possibly one block with code "USER" (only present in startup.blend),
 #       followed by DATA blocks containing custom keymaps, addon properties, autoexec paths
 #       and style definitions.
@@ -78,7 +79,7 @@
 # doubly-linked list via next and prev fields. All other objects are found via pointers
 # from these structures.
 #
-# Copyright 2012-2014 Lawrence D'Oliveiro <ldo@geek-central.gen.nz>.
+# Copyright 2012-2017 Lawrence D'Oliveiro <ldo@geek-central.gen.nz>.
 #
 # This program is free software: you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software
@@ -323,6 +324,7 @@ block_code_order = \
         b"GD\x00\x00", # type GreasePencil.
         b"IP\x00\x00", # type Ipo (obsolete, replaced by FCurves).
         b"LS\x00\x00", # type FreestyleLineStyle
+        b"CF\x00\x00", # type CacheFile
         b"LI\x00\x00", # type Library.
     )
 
