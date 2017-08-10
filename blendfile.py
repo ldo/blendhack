@@ -979,9 +979,9 @@ class Blenddata :
                 scan_recurse_depth += 1
                 if scan_recurse_depth > max_scan_recurse_depth :
                     max_scan_recurse_depth = scan_recurse_depth
-                    if self.log != None :
-                        self.log.write("scan block %d at depth %d\n" % (block["index"], scan_recurse_depth)) # debug
-                    #end if
+                #end if
+                if self.log != None :
+                    self.log.write("scan block[%d] at depth %d\n" % (block["index"], scan_recurse_depth)) # debug
                 #end if
                 scanned.add(block_ref)
                 if action(referrer, referrer_type, referrer_type_name, selector, block) :
