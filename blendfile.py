@@ -890,9 +890,9 @@ class Blenddata :
     #end encode_block
 
     def scan_block(self, referrer, referrer_type, referrer_type_name, selector, block, action, encode_ref) :
-        "invokes action(referrer, selector, block) on the specified block, followed by" \
-        " all (indirectly or directly) referenced blocks. Traversal stops if action returns" \
-        " False."
+        "invokes action(referrer, referrer_type, referrer_type_name, selector, block) on the" \
+        " specified block, followed by all (indirectly or directly) referenced blocks. Traversal" \
+        " stops if action returns False."
 
         scan_recurse_depth = 0
         max_scan_recurse_depth = 0
