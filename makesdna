@@ -41,7 +41,7 @@ if not dna_dir.endswith("/") :
 #end if
 rawdata = subprocess.Popen \
   (
-    args = (prog, "/dev/stdout", dna_dir),
+    args = (prog, "/dev/stdout", "/dev/null", dna_dir),
     stdout = subprocess.PIPE,
   ).communicate()[0].decode("utf-8")
 uncompressed = []
