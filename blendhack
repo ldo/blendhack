@@ -129,8 +129,8 @@ if log != None :
                     log.write(repr(b"".join(item for item in block["data"])))
                     log.write("\n")
                 else :
-                    for item in block["data"] :
-                        log.write(" => ")
+                    for i, item in enumerate(block["data"]) :
+                        log.write("[%d] => " % i)
                         log.write(dict_repr(item))
                         log.write("\n")
                     #end for
