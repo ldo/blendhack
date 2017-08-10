@@ -60,7 +60,7 @@ opts, args = getopt.getopt \
   (
     sys.argv[1:],
     "",
-    ("bits=", "compressed", "debug", "endian=", "raw", "remap"),
+    ("bits=", "compressed", "debug", "endian=", "raw", "remap", "save-oldaddrs"),
   )
 if len(args) not in (1, 2) :
     raise getopt.GetoptError("usage: %s blendfile [outfile]" % sys.argv[0])
@@ -71,6 +71,7 @@ compressed = False
 debug = False
 use_rawdata = False
 do_remap = False
+save_oldaddrs = False
 for keyword, value in opts :
     if keyword == "--bits" :
         bit64 = {32 : False, 64 : True}[int(value)]
@@ -84,6 +85,8 @@ for keyword, value in opts :
         use_rawdata = True
     elif keyword == "--remap" :
         do_remap = True
+    elif keyword == "--save-oldaddrs" :
+        save_oldaddrs = True
     #end if
 #end for
 if debug :
@@ -216,7 +219,7 @@ if len(args) > 1 :
         bit64 = bit64,
         big_endian = big_endian,
         compressed = compressed,
-        encode_ref = lambda block : block["index"],
+        encode_ref = (lambda block : block["index"], lambda block : block["oldaddr"])[save_oldaddrs],
         use_rawdata = use_rawdata,
       )
 #end if
