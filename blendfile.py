@@ -103,13 +103,13 @@ import gzip
 #-
 
 def structread(fromfile, decode_struct) :
-    """reads sufficient bytes from fromfile to be unpacked according to
-    decode_struct, and returns the unpacked results."""
+    "reads sufficient bytes from fromfile to be unpacked according to" \
+    " decode_struct, and returns the unpacked results."
     return struct.unpack(decode_struct, fromfile.read(struct.calcsize(decode_struct)))
 #end structread
 
 class DanglingPointer :
-    "for showing pointers that don't seem to point to any valid block"
+    "for showing pointers that don't seem to point to any valid block."
 
     def __init__(self, addr) :
         self.addr = addr
@@ -122,7 +122,7 @@ class DanglingPointer :
 #end DanglingPointer
 
 class RoutineAddr :
-    "for showing pointers to methods"
+    "for showing pointers to methods."
 
     def __init__(self, addr) :
         self.addr = addr
@@ -135,7 +135,7 @@ class RoutineAddr :
 #end RoutineAddr
 
 class BlockRef :
-    "for showing references to other blocks"
+    "for showing references to other blocks."
 
     def __init__(self, block) :
         self.block = block
@@ -155,7 +155,7 @@ class BlockRef :
 MAX_ID_NAME = 66 # from source/blender/makesdna/DNA_ID.h
 
 class PointerType :
-    "represents a pointer"
+    "represents a pointer."
 
     def __init__(self, EltType) :
         self.EltType = EltType
@@ -169,7 +169,7 @@ class PointerType :
 #end PointerType
 
 class FixedArrayType :
-    "represents a fixed-length array"
+    "represents a fixed-length array."
 
     def __init__(self, EltType, NrElts) :
         self.EltType = EltType
@@ -179,7 +179,7 @@ class FixedArrayType :
 #end FixedArrayType :
 
 class MethodType :
-    "represents a pointer to a routine"
+    "represents a pointer to a routine."
 
     def __init__(self, ResultType) :
         self.ResultType = ResultType
@@ -188,8 +188,8 @@ class MethodType :
 #end MethodType
 
 def parse_field_type(field_name, field_type) :
-    # processes special forms of field_name ("*name", "name[ind]", "(*name)()", "(*name)(void)"),
-    # returning innermost name and adjusting field_type accordingly.
+    "processes special forms of field_name (\"*name\", \"name[ind]\", \"(*name)()\"," \
+    " \"(*name)(void)\"), returning innermost name and adjusting field_type accordingly."
     if len(field_name) != 0 and field_name[0] == "*" :
         field_name, field_type = parse_field_type(field_name[1:], PointerType(field_type))
     elif field_name[:2] == "(*" and field_name[-3:] == ")()" :
@@ -211,8 +211,8 @@ def parse_field_type(field_name, field_type) :
 #end parse_field_type
 
 def encode_field_type(field_name, field_type) :
-    # does the opposite of parse_field_type, encoding derived (pointer, array, method)
-    # type information into field_name.
+    "does the opposite of parse_field_type, encoding derived (pointer, array, method)" \
+    " type information into field_name."
     if type(field_type) == PointerType :
         field_name, field_type = encode_field_type("*" + field_name, field_type.EltType)
     elif type(field_type) == MethodType :
@@ -229,7 +229,7 @@ def encode_field_type(field_name, field_type) :
 #end encode_field_type
 
 def type_name(of_type) :
-    # returns a readable display of of_type.
+    "returns a readable display of of_type."
     return \
         {
             PointerType : lambda : type_name(of_type.EltType) + "*",
@@ -256,11 +256,13 @@ primitive_types = \
     }
 
 def is_primitive_type(of_type) :
+    "is of_type one of the primitive types."
     return \
         type(of_type) == dict and of_type["name"] in primitive_types
 #end is_primitive_type
 
 def make_primitive_type(name) :
+    "constructs a representation of the primitive type with the specified name."
     entry = primitive_types[name]
     return \
         {
@@ -270,11 +272,13 @@ def make_primitive_type(name) :
 #end make_primitive_type
 
 def is_struct_type(of_type) :
+    "is of_type a struct type (one with fields)."
     return \
         type(of_type) == dict and "fields" in of_type
 #end is_struct_type
 
 def is_string_type(of_type) :
+    "does of_type represent a string."
     return \
         type(of_type) == FixedArrayType and type(of_type.EltType) == dict and of_type.EltType["name"] == "char"
 #end is_string_type
@@ -395,7 +399,7 @@ class Blenddata :
     #     "type" -- (only if the block contents were decodeable) -- the reference to the structure type of the block contents
 
     def __init__(self, big_endian = None, pointer_size = None, log = None) :
-        "args are only important for writing, ignored for reading"
+        "args are only important for writing, ignored for reading."
         if big_endian == None :
             big_endian = sys.byteorder == "big"
         #end if
@@ -410,7 +414,7 @@ class Blenddata :
     #end __init__
 
     def type_size(self, of_type) :
-        # determines the size in bytes of objects of type of_type.
+        "determines the size in bytes of objects of type of_type."
         if type(of_type) == PointerType :
             result = self.ptrsize
         elif type(of_type) == FixedArrayType :
@@ -425,6 +429,8 @@ class Blenddata :
     #end type_size
 
     def type_align(self, of_type) :
+        "determines the alignment in bytes of objects of type of_type (i.e. all" \
+        " addresses of such objects must be integer multiples of this value)."
         if type(of_type) == PointerType :
             result = self.ptrsize
         elif type(of_type) == FixedArrayType :
@@ -442,6 +448,8 @@ class Blenddata :
     #end type_align
 
     def compute_alignment(self, for_type, compute_sizes = False) :
+        "tries to compute the alignment of the specified type, which will only" \
+        " succeed for a struct type if the alignments of all its components are known."
         success = True # to begin with
         if is_struct_type(for_type) and for_type["name"] not in self.alignments :
             struct_size = 0
@@ -474,10 +482,10 @@ class Blenddata :
     #end compute_alignment
 
     def compute_alignments(self, compute_sizes = False) :
-        # computes alignments for all structs, and if compute_sizes, recomputes
-        # their sizes accordingly, else checks that they match what is computed.
-        # Checking alignments on load is helpful to ensure that I can generate
-        # correct structures on save.
+        "computes alignments for all structs, and if compute_sizes, recomputes" \
+        " their sizes accordingly, else checks that they match what is computed." \
+        " Checking alignments on load is helpful to ensure that I can generate" \
+        " correct structures on save."
         self.alignments = {}
         while True :
             missed_one = False
@@ -575,12 +583,16 @@ class Blenddata :
             for \
                 j, f \
             in \
-                enumerate(struct.unpack(self.endian + "HH" * nr_fields, sdna_data[:4 * nr_fields])) \
+                enumerate \
+                  (
+                    struct.unpack(self.endian + "HH" * nr_fields, sdna_data[:4 * nr_fields])
+                  ) \
             :
                 if j % 2 == 0 :
                     field_type = f
                 else :
-                    field_name, field_type = parse_field_type(names[f], self.types_by_index[field_type])
+                    field_name, field_type = \
+                        parse_field_type(names[f], self.types_by_index[field_type])
                     fields.append({"type" : field_type, "name" : field_name})
                     if self.log != None :
                         self.log.write("%s.%s : %s\n" % (self.types_by_index[struct_type]["name"], field_name, type_name(field_type))) # debug
@@ -600,14 +612,20 @@ class Blenddata :
         self.compute_alignments()
         self.types = {}
         for t in self.types_by_index :
-            assert (t["name"] in primitive_types) <= ("fields" not in t), "primitive type %s must not be struct" % t["name"]
+            assert (t["name"] in primitive_types) <= ("fields" not in t), \
+                "primitive type %s must not be struct" % t["name"]
             self.types[t["name"]] = t
         #end for
         assert self.structs_by_index[0] == self.types["Link"], "Link type needs to have index 0"
         self.link_type = self.types["Link"]
           # should I bother to check it consists of exactly 2 fields, both of type *Link?
         for k in primitive_types :
-            assert k not in self.types or primitive_types[k]["size"] == self.types[k]["size"], "wrong type size for primitive type %s, expected %d, got %d" % (k, primitive_types[k]["size"], self.types[k]["size"])
+            assert k not in self.types or primitive_types[k]["size"] == self.types[k]["size"], \
+                (
+                    "wrong type size for primitive type %s, expected %d, got %d"
+                %
+                    (k, primitive_types[k]["size"], self.types[k]["size"])
+                )
         #end for
     #end decode_sdna
 
@@ -678,9 +696,10 @@ class Blenddata :
     #end encode_sdna
 
     def decode_data(self, referrer, rawdata, datatype) :
-        # decodes the bytes of rawdata to Python form according to the type datatype.
+        "decodes the bytes of rawdata to Python form according to the type datatype."
         if type(datatype) == PointerType :
-            assert len(rawdata) == self.ptrsize, "expecting pointer to be %d bytes, got %d" % (self.ptrsize, len(rawdata))
+            assert len(rawdata) == self.ptrsize, \
+                "expecting pointer to be %d bytes, got %d" % (self.ptrsize, len(rawdata))
             oldaddress = struct.unpack(self.endian + self.ptrcode, rawdata)[0]
             if oldaddress == 0 :
                 result = None
@@ -699,7 +718,15 @@ class Blenddata :
             elt_size = self.type_size(datatype.EltType)
             assert len(rawdata) == elt_size * datatype.NrElts
             for i in range(datatype.NrElts) :
-                result.append(self.decode_data(referrer + (i,), rawdata[i * elt_size : (i + 1) * elt_size], datatype.EltType))
+                result.append \
+                  (
+                    self.decode_data
+                      (
+                        referrer + (i,),
+                        rawdata[i * elt_size : (i + 1) * elt_size],
+                        datatype.EltType
+                      )
+                  )
             #end for
             if datatype.EltType == self.types["char"] :
                 # prettier display
@@ -711,7 +738,8 @@ class Blenddata :
                 #end try
             #end if
         elif type(datatype) == MethodType :
-            assert len(rawdata) == self.ptrsize, "expecting method pointer to be %d bytes, got %d" % (self.ptrsize, len(rawdata))
+            assert len(rawdata) == self.ptrsize, \
+                "expecting method pointer to be %d bytes, got %d" % (self.ptrsize, len(rawdata))
             addr = struct.unpack(self.endian + self.ptrcode, rawdata)[0]
             if addr != 0 :
                 result = RoutineAddr(addr)
@@ -720,8 +748,17 @@ class Blenddata :
                 result = None
             #end if
         elif datatype["name"] in primitive_types :
-            assert len(rawdata) == primitive_types[datatype["name"]]["size"], "wrong size for primitive data of type %s, expected %d, got %d" % (datatype["name"], primitive_types[datatype["name"]]["size"], len(rawdata))
-            result = struct.unpack(self.endian + primitive_types[datatype["name"]]["code"], rawdata)[0]
+            assert len(rawdata) == primitive_types[datatype["name"]]["size"], \
+                (
+                    "wrong size for primitive data of type %s, expected %d, got %d"
+                %
+                    (datatype["name"], primitive_types[datatype["name"]]["size"], len(rawdata))
+                )
+            result = struct.unpack \
+              (
+                self.endian + primitive_types[datatype["name"]]["code"],
+                rawdata
+              )[0]
         else :
             assert "fields" in datatype, "non-primitive type %s has no fields" % datatype["name"]
             result = {}
@@ -743,10 +780,16 @@ class Blenddata :
                     field_offset = len(rawdata) # ignore rest
                     break
                 #end if
-                result[field["name"]] = self.decode_data(referrer + (field["name"],), rawdata[field_offset : field_offset + field_size], field["type"])
+                result[field["name"]] = self.decode_data \
+                  (
+                    referrer + (field["name"],),
+                    rawdata[field_offset : field_offset + field_size],
+                    field["type"]
+                  )
                 field_offset += field_size
             #end for
-            assert field_offset == len(rawdata), "leftover data after decoding %s struct" % datatype["name"]
+            assert field_offset == len(rawdata), \
+                "leftover data after decoding %s struct" % datatype["name"]
         #end if
         return \
             result
@@ -803,7 +846,12 @@ class Blenddata :
                     #end if
                 #end if
                 result += bytes(align_adjust(len(result), field_align))
-                assert type(data) == dict or datatype == self.link_type, "encode_data of non-struct value %s, expected type %s" % (repr(data), repr(datatype))
+                assert type(data) == dict or datatype == self.link_type, \
+                    (
+                        "encode_data of non-struct value %s, expected type %s"
+                    %
+                        (repr(data), repr(datatype))
+                    )
                 if type(data) == dict :
                     result += self.encode_data \
                       (
@@ -812,7 +860,10 @@ class Blenddata :
                         encode_ref = encode_ref
                       )
                 else :
-                    raise RuntimeError("don't know how to encode item %s as %s" % (repr(data), repr(datatype)))
+                    raise RuntimeError \
+                      (
+                        "don't know how to encode item %s as %s" % (repr(data), repr(datatype))
+                      )
                 #end if
             #end for
         #end if
@@ -837,9 +888,9 @@ class Blenddata :
     #end encode_block
 
     def scan_block(self, referrer, referrer_type, referrer_type_name, selector, block, action, encode_ref) :
-        # invokes action(referrer, selector, block) on the specified block, followed by
-        # all (indirectly or directly) referenced blocks. Traversal stops if action returns
-        # False.
+        "invokes action(referrer, selector, block) on the specified block, followed by" \
+        " all (indirectly or directly) referenced blocks. Traversal stops if action returns" \
+        " False."
 
         scan_recurse_depth = 0
         max_scan_recurse_depth = 0
@@ -855,9 +906,16 @@ class Blenddata :
             def check_item(referrer, referrer_type, referrer_type_name, selector, item, itemtype) :
 
                 def check_scan_ref() :
-                    # assume at most one level of pointer indirection!
                     if type(item) == BlockRef :
-                        scan_block_recurse(referrer, referrer_type, referrer_type_name, selector, item.block, action)
+                        scan_block_recurse \
+                          (
+                            referrer,
+                            referrer_type,
+                            referrer_type_name,
+                            selector,
+                            item.block,
+                            action
+                          )
                     #end if
                 #end check_scan_ref
 
@@ -868,17 +926,36 @@ class Blenddata :
                     #end if
                     #end debug
                     for i in range(itemtype.NrElts) :
-                        check_item(item, itemtype, type_name(itemtype), i, item[i], itemtype.EltType)
+                        check_item \
+                          (
+                            item,
+                            itemtype,
+                            type_name(itemtype),
+                            i,
+                            item[i],
+                            itemtype.EltType
+                          )
                     #end for
                 #end check_array
 
                 def check_struct() :
-                    assert type(item) == dict or itemtype == self.link_type, "non-struct value %s, expected type %s" % (repr(item), repr(itemtype))
+                    assert type(item) == dict or itemtype == self.link_type, \
+                        "non-struct value %s, expected type %s" % (repr(item), repr(itemtype))
                     if type(item) == dict :
                         for field in itemtype["fields"] :
-                            fieldval = (item.__getitem__, item.get)[itemtype == self.link_type](field["name"])
+                            fieldval = \
+                                (item.__getitem__, item.get)[itemtype == self.link_type] \
+                                    (field["name"])
                             if fieldval != None :
-                                check_item(item, itemtype, type_name(field["type"]), field, fieldval, field["type"])
+                                check_item \
+                                  (
+                                    item,
+                                    itemtype,
+                                    type_name(field["type"]),
+                                    field,
+                                    fieldval,
+                                    field["type"]
+                                  )
                             #end if
                         #end for
                     #end if
@@ -933,6 +1010,7 @@ class Blenddata :
     #end scan_block
 
     def decode_block(self, block, block_type, dna_count = None) :
+        "decodes the raw block data according to the given block type."
         block["type"] = block_type
         type_size = self.type_size(block_type)
         decoded = []
@@ -961,7 +1039,7 @@ class Blenddata :
     #end decode_block
 
     def construct_block(self, code, oldaddr, dna_index, dna_count, contents) :
-        # prepends a header for the specified block contents and returns the complete block.
+        "prepends a header for the specified block contents and returns the complete block."
         return \
             (
                 struct.pack
@@ -1102,7 +1180,8 @@ class Blenddata :
             origfd = None
         #end if
         known_block_codes = frozenset(block_code_order)
-        sig, ptrcode, endiancode, self.version = structread(fd, "7s1s1s3s") # note not endian-dependent
+        sig, ptrcode, endiancode, self.version = structread(fd, "7s1s1s3s")
+          # note not endian-dependent
         assert sig == blender_sig, "unrecognized file header signature %s" % sig
         self.ptrsize = {b"_" : 4, b"-" : 8}[ptrcode]
         self.ptrcode = {b"_" : "L", b"-" : "Q"}[ptrcode]
@@ -1224,7 +1303,8 @@ class Blenddata :
               # because they do not seem to actually be of Link type.
                 self.decode_block(block, block_type)
                 if type_name(block_type) == "wmWindowManager" :
-                    assert self.window_manager_block == None, "more than one wmWindowManager block found"
+                    assert self.window_manager_block == None, \
+                        "more than one wmWindowManager block found"
                     self.window_manager_block = block
                 #end if
             else :
@@ -1269,11 +1349,29 @@ class Blenddata :
             #end referenced_action
 
         #begin find_referenced
-            self.scan_block(None, None, None, None, self.global_block, referenced_action, encode_ref)
+            self.scan_block \
+              (
+                None,
+                None,
+                None,
+                None,
+                self.global_block,
+                referenced_action,
+                encode_ref
+              )
             for extra_block in (self.window_manager_block, self.user_prefs_block) :
               # extra blocks that need to be saved, even if there are no explicit references to them from anywhere else
                 if extra_block != None :
-                    self.scan_block(None, None, None, None, extra_block, referenced_action, encode_ref)
+                    self.scan_block \
+                      (
+                        None,
+                        None,
+                        None,
+                        None,
+                        extra_block,
+                        referenced_action,
+                        encode_ref
+                      )
                 #end if
             #end for
         #end find_referenced
@@ -1327,7 +1425,12 @@ class Blenddata :
                     0, # block["dna_index"],
                     1, # block["dna_count"],
                     (
-                        lambda : self.encode_data(block["data"], block["type"], encode_ref = encode_ref),
+                        lambda : self.encode_data
+                          (
+                            block["data"],
+                            block["type"],
+                            encode_ref = encode_ref
+                          ),
                         lambda : block["rawdata"],
                     )[not block["decoded"] or use_rawdata and "rawdata" in block]()
                   )
