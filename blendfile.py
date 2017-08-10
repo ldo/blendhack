@@ -502,6 +502,8 @@ class Blenddata :
     def decode_sdna(self, sdna_data) :
         "decodes a structure definitions block and saves the results in instance variables."
 
+        data_offset = None
+
         def align_sdna() :
             nonlocal sdna_data, data_offset
             adj = align_adjust(data_offset, 4)
