@@ -292,7 +292,10 @@ def align_adjust(offset, multiple) :
 
 block_code_order = \
     ( # blocks should be written to file in this order to avoid Blender crashes.
-      # order taken from write_file_handle routine in source/blender/blenloader/intern/writefile.c.
+      # order taken from (older version of) write_file_handle routine in
+      # source/blender/blenloader/intern/writefile.c; current versions
+      # no longer bother enforcing any order, so perhaps the crashes were
+      # just bugs in my code?
         b"WM\x00\x00", # type wmWindowManager.
         b"SN\x00\x00", # (newer Blender) type bScreen.
         b"SR\x00\x00", # (older Blender) type bScreen.
