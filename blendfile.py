@@ -246,8 +246,8 @@ primitive_types = \
         "ushort" : {"code" : "H", "size" : 2},
         "int" : {"code" : "i", "size" : 4},
         # notice what's missing? No unsigned int!
-        "long" : {"code" : "q", "size" : 4},
-        "ulong" : {"code" : "Q", "size" : 4},
+        "long" : {"code" : "l", "size" : 4},
+        "ulong" : {"code" : "L", "size" : 4},
         "float" : {"code" : "f", "size" : 4},
         "double" : {"code" : "d", "size" : 8},
         "int64_t" : {"code" : "q", "size" : 8}, # might not be present
