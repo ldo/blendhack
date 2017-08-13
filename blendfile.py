@@ -94,6 +94,7 @@
 #-
 
 import sys
+import time # debug
 import io
 import struct
 import gzip
@@ -892,103 +893,113 @@ class Blenddata :
             result
     #end encode_block
 
-    def scan_block(self, referrer, referrer_type, referrer_type_name, selector, block, action, encode_ref) :
+    def scan_block(self, referrer, referrer_type, referrer_type_name, selector, block, action, encode_ref, scanned = None) :
         "invokes action(referrer, referrer_type, referrer_type_name, selector, block) on the" \
         " specified block, followed by all (indirectly or directly) referenced blocks. Traversal" \
         " stops if action returns False."
 
-        scan_recurse_depth = 0
+        # Instead of doing direct recursive calls, I maintain a queue of
+        # pending actions. This is because the recursion depth for complex
+        # files can otherwise become too great for Python to handle.
+        action_queue = []
         max_scan_recurse_depth = 0
 
-        scanned = set() # blocks that have already been scanned
+        if scanned == None :
+            scanned = set() # blocks that have already been scanned
+        #end if
+
+        def queue_action(action) :
+            nonlocal max_scan_recurse_depth
+            action_queue.append(action)
+            if len(action_queue) > max_scan_recurse_depth :
+                max_scan_recurse_depth = len(action_queue)
+            #end if
+        #end queue_action
 
         def scan_block_recurse(referrer, referrer_type, referrer_type_name, selector, block, action) :
             # invokes action on the specified block, followed by all (indirectly or directly)
             # referenced blocks that haven't already been scanned.
 
-            nonlocal scan_recurse_depth, max_scan_recurse_depth
+            def doit() :
 
-            def check_item(referrer, referrer_type, referrer_type_name, selector, item, itemtype) :
+                def check_item(referrer, referrer_type, referrer_type_name, selector, item, itemtype) :
 
-                def check_scan_ref() :
-                    if type(item) == BlockRef :
-                        scan_block_recurse \
-                          (
-                            referrer,
-                            referrer_type,
-                            referrer_type_name,
-                            selector,
-                            item.block,
-                            action
-                          )
-                    #end if
-                #end check_scan_ref
+                    def check_scan_ref() :
+                        if type(item) == BlockRef :
+                            scan_block_recurse \
+                              (
+                                referrer,
+                                referrer_type,
+                                referrer_type_name,
+                                selector,
+                                item.block,
+                                action
+                              )
+                        #end if
+                    #end check_scan_ref
 
-                def check_array() :
-                    # debug
-                    if self.log != None and len(item) != itemtype.NrElts :
-                        self.log.write("array %s has %d elts, expected %d\n" % (repr(item), len(item), itemtype.NrElts))
-                    #end if
-                    #end debug
-                    for i in range(itemtype.NrElts) :
-                        check_item \
-                          (
-                            item,
-                            itemtype,
-                            type_name(itemtype),
-                            i,
-                            item[i],
-                            itemtype.EltType
-                          )
-                    #end for
-                #end check_array
-
-                def check_struct() :
-                    assert type(item) == dict or itemtype == self.link_type, \
-                        "non-struct value %s, expected type %s" % (repr(item), repr(itemtype))
-                    if type(item) == dict :
-                        for field in itemtype["fields"] :
-                            fieldval = \
-                                (item.__getitem__, item.get)[itemtype == self.link_type] \
-                                    (field["name"])
-                            if fieldval != None :
-                                check_item \
-                                  (
-                                    item,
-                                    itemtype,
-                                    type_name(field["type"]),
-                                    field,
-                                    fieldval,
-                                    field["type"]
-                                  )
-                            #end if
+                    def check_array() :
+                        # debug
+                        if self.log != None and len(item) != itemtype.NrElts :
+                            self.log.write("array %s has %d elts, expected %d\n" % (repr(item), len(item), itemtype.NrElts))
+                        #end if
+                        #end debug
+                        for i in range(itemtype.NrElts) :
+                            check_item \
+                              (
+                                item,
+                                itemtype,
+                                type_name(itemtype),
+                                i,
+                                item[i],
+                                itemtype.EltType
+                              )
                         #end for
-                    #end if
-                #end check_struct
+                    #end check_array
 
-            #begin check_item
-                # transitively check other referenced blocks that haven't already
-                # been scanned
-                if type(itemtype) == PointerType :
-                    check_scan_ref()
-                elif type(itemtype) == FixedArrayType and itemtype.EltType != self.types["char"] :
-                    check_array()
-                elif is_struct_type(itemtype) :
-                    check_struct()
-                #end if
-            #end check_item
+                    def check_struct() :
+                        assert type(item) == dict or itemtype == self.link_type, \
+                            "non-struct value %s, expected type %s" % (repr(item), repr(itemtype))
+                        if type(item) == dict :
+                            for field in itemtype["fields"] :
+                                fieldval = \
+                                    (item.__getitem__, item.get)[itemtype == self.link_type] \
+                                        (field["name"])
+                                if fieldval != None :
+                                    check_item \
+                                      (
+                                        item,
+                                        itemtype,
+                                        type_name(field["type"]),
+                                        field,
+                                        fieldval,
+                                        field["type"]
+                                      )
+                                #end if
+                            #end for
+                        #end if
+                    #end check_struct
 
-        #begin scan_block_recurse
-            block_ref = encode_ref(block)
-            if block_ref not in scanned :
-                scan_recurse_depth += 1
-                if scan_recurse_depth > max_scan_recurse_depth :
-                    max_scan_recurse_depth = scan_recurse_depth
-                #end if
+                    def doit() :
+                        # transitively check other referenced blocks that haven't already
+                        # been scanned
+                        if type(itemtype) == PointerType :
+                            check_scan_ref()
+                        elif type(itemtype) == FixedArrayType and itemtype.EltType != self.types["char"] :
+                            check_array()
+                        elif is_struct_type(itemtype) :
+                            check_struct()
+                        #end if
+                    #end doit
+
+                #begin check_item
+                    queue_action(doit)
+                #end check_item
+
+            #begin doit
                 if self.log != None :
-                    self.log.write("scan block[%d] at depth %d\n" % (block["index"], scan_recurse_depth)) # debug
+                    self.log.write("scan block[%d] (done %d) at depth %d\n" % (block["index"], len(scanned), len(action_queue))) # debug
                 #end if
-                scanned.add(block_ref)
                 if action(referrer, referrer_type, referrer_type_name, selector, block) :
                     if block["decoded"] :
                         check_item \
@@ -1006,12 +1017,30 @@ class Blenddata :
                           )
                     #end if
                 #end if
-                scan_recurse_depth -= 1
+            #end doit
+
+        #begin scan_block_recurse
+            block_ref = encode_ref(block)
+            if block_ref not in scanned :
+                scanned.add(block_ref)
+                queue_action(doit)
             #end if
         #end scan_block_recurse
 
     #begin scan_block
         scan_block_recurse(referrer, referrer_type, referrer_type_name, selector, block, action)
+        last_log = 0
+        while len(action_queue) != 0 :
+            if self.log != None :
+                now = time.time()
+                if now - last_log >= 5.0 :
+                    self.log.write("action_queue len %d\n" % len(action_queue)) # debug
+                    last_log = now
+                #end if
+            #end if
+            doit = action_queue.pop(0)
+            doit()
+        #end while
     #end scan_block
 
     def decode_block(self, block, block_type, dna_count = None) :
@@ -1134,6 +1163,7 @@ class Blenddata :
         "loads the contents of the specified .blend file."
 
         encode_ref = self.__class__.default_encode_ref # good enough
+        scanned = set() # blocks that have already been scanned
 
         def decode_untyped_blocks() :
           # tries to determine types of undecoded blocks by expected types of
@@ -1163,7 +1193,7 @@ class Blenddata :
                     #end if
                     block["override_type"] = block_type
                     self.decode_block(block, block_type, dna_count = dna_count)
-                    self.scan_block(referrer, referrer_type, referrer_type_name, selector, block, decode_block_action, encode_ref)
+                    self.scan_block(referrer, referrer_type, referrer_type_name, selector, block, decode_block_action, encode_ref, scanned)
                       # in case it points to further undecoded blocks
                 #end if
                 return \
@@ -1171,7 +1201,7 @@ class Blenddata :
             #end decode_block_action
 
         #begin decode_untyped_blocks
-            self.scan_block(None, None, None, None, self.global_block, decode_block_action, encode_ref)
+            self.scan_block(None, None, None, None, self.global_block, decode_block_action, encode_ref, scanned)
         #end decode_untyped_blocks
 
     #begin load
@@ -1347,6 +1377,8 @@ class Blenddata :
         def find_referenced() :
             # marks all specially-coded blocks needing saving.
 
+            scanned = set() # blocks that have already been scanned
+
             def referenced_action(referrer, referrer_type, referrer_type_name, selector, block) :
                 referenced.add(encode_ref(block))
                 return \
@@ -1362,7 +1394,8 @@ class Blenddata :
                 None,
                 self.global_block,
                 referenced_action,
-                encode_ref
+                encode_ref,
+                scanned
               )
             for extra_block in (self.window_manager_block, self.user_prefs_block) :
               # extra blocks that need to be saved, even if there are no explicit references to them from anywhere else
@@ -1375,7 +1408,8 @@ class Blenddata :
                         None,
                         extra_block,
                         referenced_action,
-                        encode_ref
+                        encode_ref,
+                        scanned
                       )
                 #end if
             #end for

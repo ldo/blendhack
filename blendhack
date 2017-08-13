@@ -50,8 +50,6 @@ def dict_repr(d) :
         result
 #end dict_repr
 
-sys.setrecursionlimit(100000) # needed for saving complex .blend files
-
 #+
 # Mainline
 #-
