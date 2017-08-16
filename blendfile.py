@@ -623,7 +623,17 @@ class Blenddata :
         #end for
         assert self.structs_by_index[0] == self.types["Link"], "Link type needs to have index 0"
         self.link_type = self.types["Link"]
-          # should I bother to check it consists of exactly 2 fields, both of type *Link?
+        assert \
+            (
+                len(self.link_type["fields"]) == 2
+            and
+                all
+                  (
+                    isinstance(f["type"], PointerType) and f["type"].EltType == self.link_type
+                    for f in self.link_type["fields"]
+                  )
+            ), \
+            "Link type must have exactly 2 fields, both pointer to Link"
         for k in primitive_types :
             assert k not in self.types or primitive_types[k]["size"] == self.types[k]["size"], \
                 (
