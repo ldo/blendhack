@@ -523,7 +523,6 @@ class Blenddata :
         sdna_data = sdna_data[4:]
         names = []
         self.types_by_index = []
-        self.structs_by_index = []
         self.link_type = None
         data_offset = 4
         for \
@@ -582,6 +581,7 @@ class Blenddata :
         nr_structs = struct.unpack(self.endian + "I", sdna_data[4:8])[0]
         sdna_data = sdna_data[8:]
         data_offset += 8
+        self.structs_by_index = [None] * nr_structs
         for i in range(nr_structs) :
             struct_type, nr_fields = struct.unpack(self.endian + "HH", sdna_data[:4])
             sdna_data = sdna_data[4:]
@@ -606,9 +606,6 @@ class Blenddata :
                 #end if
             #end for
             self.types_by_index[struct_type]["fields"] = fields
-            if len(self.structs_by_index) < i + 1 :
-                self.structs_by_index.extend([None] * (i + 1 - len(self.structs_by_index)))
-            #end if
             self.structs_by_index[i] = self.types_by_index[struct_type]
             if self.log != None :
                 self.log.write("struct[%d] is %s\n" % (i, self.types_by_index[struct_type]["name"])) # debug
