@@ -615,6 +615,8 @@ class Blenddata :
         self.compute_alignments()
         self.types = {}
         for t in self.types_by_index :
+            # Note there are a few types (e.g. FileData, anim) which have size 0
+            # and no fields defined.
             assert (t["name"] in primitive_types) <= ("fields" not in t), \
                 "primitive type %s must not be struct" % t["name"]
             self.types[t["name"]] = t
