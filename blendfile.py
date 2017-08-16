@@ -1039,7 +1039,7 @@ class Blenddata :
     #begin scan_block
         scan_block_recurse(referrer, referrer_type, referrer_type_name, selector, block, action)
         last_log = 0
-        while len(action_queue) != 0 :
+        while True :
             if self.log != None :
                 now = time.time()
                 if now - last_log >= 5.0 :
@@ -1047,7 +1047,11 @@ class Blenddata :
                     last_log = now
                 #end if
             #end if
-            doit = action_queue.pop(0)
+            try :
+                doit = action_queue.pop(0)
+            except IndexError :
+                break
+            #end try
             doit()
         #end while
     #end scan_block
