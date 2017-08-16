@@ -375,7 +375,7 @@ class Blenddata :
     #     version --
     #         3-character version code from file header
     #     window_manager_block --
-    #         "DATA" block of type wmWindowManager
+    #         block of type wmWindowManager
 
     # Struct (non-primitive) types will be found in structs_by_index, types and types_by_index;
     # primitive types only in the latter two. Non-pointer/array/method types are represented
