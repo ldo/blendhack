@@ -2,8 +2,8 @@
 # Parsing of .blend files created by Blender <http://www.blender.org/>.
 #
 # For some info, see
-#     "The Mystery of the Blend" <http://www.atmind.nl/blender/mystery_ot_blend.html>
-#     The Blender source code, doc/blender_file_format subdirectory
+#     The Blender source code, doc/blender_file_format subdirectory;
+#     The doc/ subdirectory of this repo, containing an update of the above info.
 #
 # Further info not mentioned above:
 #
