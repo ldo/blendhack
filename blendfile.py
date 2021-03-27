@@ -5,7 +5,7 @@
 #     The Blender source code, doc/blender_file_format subdirectory;
 #     The doc/ subdirectory of this repo, containing an update of the above info.
 #
-# Further info not mentioned above:
+# Overview:
 #
 # Most blocks have code "DATA", however a few have special codes:
 #     * always 1 block with code "GLOB", type FileGlobal
