@@ -34,7 +34,7 @@
 #     * blocks with code "TX\x00\x00", type Text.
 #     * blocks with code "SK\x00\x00", type Speaker.
 #     * blocks with code "SO\x00\x00", type Sound.
-#     * blocks with code "GR\x00\x00", type Group.
+#     * blocks with code "GR\x00\x00", type Group (Collection in newer Blender).
 #     * blocks with code "AR\x00\x00", type bArmature.
 #     * blocks with code "AC\x00\x00", type bAction.
 #     * blocks with code "OB\x00\x00", type Object.
@@ -52,6 +52,12 @@
 #     * blocks with code "LS\x00\x00", type FreestyleLineStyle.
 #     * blocks with code "LI\x00\x00", type Library.
 #     * blocks with code "CF\x00\x00", type CacheFile.
+#     * blocks with code "WS\x00\x00", type WorkSpace.
+#     * blocks with code "LP\x00\x00", type LightProbe.
+#     * blocks with code "HA\x00\x00", type Hair.
+#     * blocks with code "PT\x00\x00", type PointCloud.
+#     * blocks with code "VO\x00\x00", type Volume.
+#     * blocks with code "SI\x00\x00", type Simulation (geometry node groups).
 #     * possibly one block with code "USER" (only present in startup.blend),
 #       followed by DATA blocks containing custom keymaps, addon properties, autoexec paths
 #       and style definitions.
@@ -65,7 +71,7 @@
 # Also several "DATA" blocks specify a type of Link (dna_index = 0), which is 2 * ptrsize
 # bytes, but are not actually of this type, and can be smaller than this, or even way larger.
 #
-# The above 2-letter codes may be found in source file source/blender/makesdna/DNA_ID.h.
+# The above 2-letter codes may be found in source file source/blender/makesdna/DNA_ID_enums.h.
 # The significance of the code always ending with two zero bytes is that these blocks
 # have user-visible names: these names are required to be unique among blocks of the
 # same type, and are prefixed internally with the two initial bytes of the block code,
@@ -316,7 +322,7 @@ block_code_order = \
         b"TX\x00\x00", # type Text.
         b"SK\x00\x00", # type Speaker.
         b"SO\x00\x00", # type Sound.
-        b"GR\x00\x00", # type Group.
+        b"GR\x00\x00", # type Group (Collection in newer Blender).
         b"AR\x00\x00", # type bArmature
         b"AC\x00\x00", # type bAction.
         b"OB\x00\x00", # type Object.
@@ -333,6 +339,12 @@ block_code_order = \
         b"IP\x00\x00", # type Ipo (obsolete, replaced by FCurves).
         b"LS\x00\x00", # type FreestyleLineStyle
         b"CF\x00\x00", # type CacheFile
+        b"WS\x00\x00", # type WorkSpace
+        b"LP\x00\x00", # type LightProbe
+        b"HA\x00\x00", # type Hair
+        b"PT\x00\x00", # type PointCloud
+        b"VO\x00\x00", # type Volume
+        b"SI\x00\x00", # type Simulation (geometry node groups)
         b"LI\x00\x00", # type Library.
     )
 
