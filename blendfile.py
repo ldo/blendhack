@@ -1446,7 +1446,7 @@ class Blenddata :
 
             done_coded = False
 
-            def save_action(referrer, referrer_type, referre_type_name, selector, block) :
+            def save_action(referrer, referrer_type, referrer_type_name, selector, block) :
                 nonlocal done_coded
                 block_ref = encode_ref(block)
                 doit = block_ref not in saved and (block["code"] == b"DATA" or not done_coded)
