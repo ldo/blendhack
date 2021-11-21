@@ -58,7 +58,7 @@
 #     * blocks with code "PT\x00\x00", type PointCloud.
 #     * blocks with code "VO\x00\x00", type Volume.
 #     * blocks with code "SI\x00\x00", type Simulation (geometry node groups).
-#     * possibly one block with code "USER" (only present in startup.blend),
+#     * possibly one block with code "USER" (only present in userpref.blend),
 #       followed by DATA blocks containing custom keymaps, addon properties, autoexec paths
 #       and style definitions.
 #     * always 1 block with code "DNA1", containing the "structure DNA" (struct type definitions).
