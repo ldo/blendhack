@@ -1676,6 +1676,12 @@ class Blenddata :
         if compression == None :
             compression = COMPRESSION.NONE
         #end if
+        if compression.wrap == None :
+            raise RuntimeError \
+              (
+                "%s compression requested, but compression wrapper is not available" % compression.name
+              )
+        #end if
         outfile = compression.wrap(open(filename, "wb"), True)
         outfile.write \
           (
