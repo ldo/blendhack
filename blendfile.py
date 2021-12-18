@@ -85,7 +85,7 @@
 # doubly-linked list via next and prev fields. All other objects are found via pointers
 # from these structures.
 #
-# Copyright 2012-2017 Lawrence D'Oliveiro <ldo@geek-central.gen.nz>.
+# Copyright 2012-2021 Lawrence D'Oliveiro <ldo@geek-central.gen.nz>.
 #
 # This program is free software: you can redistribute it and/or modify it under
 # the terms of the GNU General Public License as published by the Free Software
@@ -100,10 +100,16 @@
 #-
 
 import sys
+import enum
 import time # debug
 import io
 import struct
 import gzip
+try :
+    import zstandard # get from <https://github.com/indygreg/python-zstandard>
+except ImportError :
+    zstandard = None
+#end try
 
 #+
 # Useful stuff
@@ -349,7 +355,121 @@ block_code_order = \
     )
 
 blender_sig = b"BLENDER"
-  # file must begin with this
+  # (decompressed) file must begin with this
+
+class UncompressedWrapper :
+
+    def __init__(self, fileobj, writing) :
+        self.fileobj = fileobj
+        self.writing = writing
+        if writing :
+            self.read = None
+            self.tell = None
+            self.write = fileobj.write
+            self.flush = fileobj.flush
+        else :
+            self.read = fileobj.read
+            self.tell = fileobj.tell
+            self.write = None
+            self.flush = None
+        #end if
+    #end __init__
+
+    def close(self) :
+        self.fileobj.close()
+        self.fileobj = None
+    #end close
+
+#end UncompressedWrapper
+
+class GzipWrapper :
+
+    def __init__(self, fileobj, writing) :
+        self.fileobj = fileobj
+        self.writing = writing
+        wrap = gzip.GzipFile(mode = ("r", "w")[writing], fileobj = fileobj)
+        self.wrap = wrap
+        if writing :
+            self.read = None
+            self.tell = None
+            self.write = wrap.write
+            self.flush = wrap.flush
+        else :
+            self.read = wrap.read
+            self.tell = wrap.tell
+            self.write = None
+            self.flush = None
+        #end if
+    #end __init__
+
+    def close(self) :
+        self.wrap.close()
+        self.fileobj.close() # no option for Gzip to do this for me
+        self.wrap = None
+        self.fileobj = None
+    #end close
+
+#end GzipWrapper
+
+if zstandard != None :
+
+    class ZStdWrapper :
+
+        def __init__(self, fileobj, writing) :
+            self.fileobj = fileobj
+            if writing :
+                comp = zstandard.ZstdCompressor()
+                wrap = comp.stream_writer(fileobj, closefd = True)
+                self.wrap = wrap
+                self.read = None
+                self.tell = None
+                self.write = wrap.write
+                self.flush = wrap.flush
+            else :
+                decomp = zstandard.ZstdDecompressor()
+                wrap = decomp.stream_reader(fileobj, closefd = True)
+                self.wrap = wrap
+                self.read = wrap.read
+                self.tell = wrap.tell
+                self.write = None
+                self.flush = None
+            #end if
+            self.close = wrap.close
+        #end def
+
+    #end ZStdWrapper
+
+else :
+    ZStdWrapper = None
+#end if
+
+class COMPRESSION(enum.Enum) :
+    "compression formats for .blend files."
+    NONE = ("none", None, UncompressedWrapper)
+    GZIP = ("gzip", b"\x1F\x8B", GzipWrapper)
+    ZSTD = ("zstd", b"\x28\xB5\x2F\xFD", ZStdWrapper) # Blender 3.0 and later
+
+    @property
+    def name(self) :
+        return \
+            self.value[0]
+    #end name
+
+    @property
+    def sig(self) :
+        "file using this format must begin with this bytestring."
+        return \
+            self.value[1]
+    #end sig
+
+    @property
+    def wrap(self) :
+        "wrapper class/function implementing this compression format."
+        return \
+            self.value[2]
+    #end wrap
+
+#end COMPRESSION
 
 class Blenddata :
     "Call the load method on an instance of this to parse a .blend file, passing it" \
@@ -361,6 +481,8 @@ class Blenddata :
     #         list of blocks from file, in order of appearance
     #     blocks_by_oldaddress --
     #         table of blocks from file, indexed by old-address field
+    #     compression --
+    #         compression format that was used for loaded file
     #     endian --
     #         prefix code to use with struct.unpack to indicate endianness of data
     #     global_block --
@@ -426,6 +548,7 @@ class Blenddata :
         self.ptrcode = {4 : "L", 8 : "Q"}[pointer_size]
         self.big_endian = big_endian
         self.endian = {False : "<", True : ">"}[big_endian]
+        self.compression = COMPRESSION.NONE
         self.log = log
     #end __init__
 
@@ -1230,15 +1353,41 @@ class Blenddata :
         #end decode_untyped_blocks
 
     #begin load
-        origfd = open(filename, "rb")
-        sig = origfd.read(2)
-        origfd.seek(0)
-        if sig == b"\x1F\x8B" :
-            fd = gzip.GzipFile(mode = "r", fileobj = origfd)
-        else :
-            fd = origfd
-            origfd = None
-        #end if
+        fd = open(filename, "rb")
+        try_formats = iter \
+          (
+            sorted
+              (
+                (c for c in list(COMPRESSION) if c.sig != None),
+                key = lambda c : len(c.sig)
+              )
+          )
+        sig = b""
+        while True :
+            format = next(try_formats, None)
+            if format == None :
+                # not compressed
+                self.compression = COMPRESSION.NONE
+                fd.seek(0)
+                fd = UncompressedWrapper(fd, False)
+                break
+            #end if
+            if len(format.sig) != len(sig) :
+                sig += fd.read(len(format.sig) - len(sig))
+            #end if
+            if sig == format.sig :
+                if format.wrap == None :
+                    raise RuntimeError \
+                      (
+                        "file is %s-compressed, but decompression wrapper is not available" % format.name
+                      )
+                #end if
+                self.compression = format
+                fd.seek(0)
+                fd = format.wrap(fd, False)
+                break
+            #end if
+        #end while
         known_block_codes = frozenset(block_code_order)
         sig, ptrcode, endiancode, self.version = structread(fd, "7s1s1s3s")
           # note not endian-dependent
@@ -1248,7 +1397,17 @@ class Blenddata :
         self.endian = {b"v" : "<", b"V" : ">"}[endiancode]
         self.big_endian = endiancode == b"V"
         if self.log != None :
-            self.log.write("File Blender version = %s, ptrsize = %d, endian = %s\n" % (repr(self.version), self.ptrsize, ("little", "big")[endiancode == b"V"]))
+            self.log.write \
+              (
+                    "File Blender version = %s, ptrsize = %d, endian = %s, compression = %s\n"
+                %
+                    (
+                        repr(self.version),
+                        self.ptrsize,
+                        ("little", "big")[endiancode == b"V"],
+                        self.compression.name,
+                    )
+              )
         #end if
         self.blocks = []
         self.blocks_by_oldaddress = {}
@@ -1311,9 +1470,6 @@ class Blenddata :
         #end while
         assert sdna_seen, "missing SDNA block"
         fd.close()
-        if origfd != None :
-            origfd.close()
-        #end if
         assert self.global_block != None, "missing GLOB block"
         for block in self.blocks :
             block_type = self.structs_by_index[block["dna_index"]]
@@ -1386,7 +1542,7 @@ class Blenddata :
       (
         self,
         filename,
-        compressed = False,
+        compression = None,
         bit64 = None,
           # can be False to force 32-bit pointers, True to force 64-bit, None to leave at default
         big_endian = None,
@@ -1514,7 +1670,13 @@ class Blenddata :
             self.big_endian = big_endian
             self.endian = {False : "<", True : ">"}[big_endian]
         #end if
-        outfile = (open, gzip.open)[compressed](filename, "wb")
+        if compression == None :
+            compression = self.compression
+        #end if
+        if compression == None :
+            compression = COMPRESSION.NONE
+        #end if
+        outfile = compression.wrap(open(filename, "wb"), True)
         outfile.write \
           (
                 blender_sig
