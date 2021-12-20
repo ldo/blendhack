@@ -25,6 +25,8 @@
 #-
 
 import sys
+import io
+import logging
 import getopt
 import blendfile
 
@@ -58,7 +60,7 @@ opts, args = getopt.getopt \
   (
     sys.argv[1:],
     "",
-    ("bits=", "compression=", "debug", "endian=", "raw", "remap", "save-oldaddrs"),
+    ("bits=", "compression=", "endian=", "loglevel=", "raw", "remap", "save-oldaddrs"),
   )
 if len(args) not in (1, 2) :
     raise getopt.GetoptError("usage: %s blendfile [outfile]" % sys.argv[0])
@@ -70,6 +72,7 @@ debug = False
 use_rawdata = False
 do_remap = False
 save_oldaddrs = False
+loglevel = None
 for keyword, value in opts :
     if keyword == "--bits" :
         bit64 = {32 : False, 64 : True}[int(value)]
@@ -80,10 +83,18 @@ for keyword, value in opts :
         else :
             raise getopt.GetoptError("unrecognized compression format %s" % value)
         #end if
-    elif keyword == "--debug" :
-        debug = True
     elif keyword == "--endian" :
         big_endian = {"big" : True, "little" : False}[value.lower()]
+    elif keyword == "--loglevel" :
+        try :
+            loglevel = int(value)
+        except ValueError :
+            loglevel = logging._nameToLevel.get(value.upper())
+        #end try
+        if loglevel == None :
+            raise getopt.GetoptError("invalid numeric or symbolic level %s" % repr(value))
+        #end if
+        logging.basicConfig(level = loglevel)
     elif keyword == "--raw" :
         use_rawdata = True
     elif keyword == "--remap" :
@@ -92,68 +103,78 @@ for keyword, value in opts :
         save_oldaddrs = True
     #end if
 #end for
-if debug :
-    log = sys.stdout
-else :
-    log = None
-#end if
-blend = blendfile.Blenddata(log = log).load(args[0], keep_rawdata = use_rawdata, count_refs = True)
-if log != None :
-    for i, block in enumerate(blend.blocks) :
-        if block["decoded"] :
-            log.write("* block[%d](%s)[%s]@%#x : %s[%d]\n" % (i, repr(block["code"]), len(block.get("rawdata", "")), block["oldaddr"], blendfile.type_name(block["type"]), block["dna_count"])) # debug
-            referrers = block.get("refs")
-            if referrers != None and len(referrers) != 0 :
-                log.write(" refs(%d): " % len(referrers))
-                first = True
-                for referrer in referrers :
-                    if len(referrer) != 0 :
-                        assert type(referrer[0]) == dict, "referrer does not begin with block dict"
-                        if first :
-                            first = False
-                        else :
-                            log.write(", ")
-                        #end if
-                        log.write("block[%d]" % referrer[0]["index"])
-                        for elt in referrer[1:] :
-                            if type(elt) == int :
-                                log.write("[%d]" % elt)
-                            elif type(elt) == str :
-                                log.write("." + elt)
-                            else :
-                                raise AssertionError("type of %s not int index or string field name" % repr(elt))
-                            #end if
-                        #end for
+blend = blendfile.Blenddata(loglevel = loglevel).load(args[0], keep_rawdata = use_rawdata, count_refs = True)
+for i, block in enumerate(blend.blocks) :
+    if block["decoded"] :
+        referenced = io.StringIO()
+        referrers = block.get("refs")
+        if referrers != None and len(referrers) != 0 :
+            first = True
+            referenced.write(" refs(%d): " % len(referrers))
+            for referrer in referrers :
+                if len(referrer) != 0 :
+                    assert type(referrer[0]) == dict, "referrer does not begin with block dict"
+                    if first :
+                        first = False
                     else :
-                        log.write("()")
+                        referenced.write(", ")
                     #end if
-                #end for
-                log.write("\n")
-            else :
-                log.write(" - no refs to this block\n")
-            #end if
-            if type(block["data"]) in (tuple, list) :
-                if blendfile.type_name(block["type"]) == "char" :
-                    log.write(" => ")
-                    log.write(repr(b"".join(item for item in block["data"])))
-                    log.write("\n")
-                else :
-                    for i, item in enumerate(block["data"]) :
-                        log.write("[%d] => " % i)
-                        log.write(dict_repr(item))
-                        log.write("\n")
+                    referenced.write("block[%d]" % referrer[0]["index"])
+                    for elt in referrer[1:] :
+                        if type(elt) == int :
+                            referenced.write("[%d]" % elt)
+                        elif type(elt) == str :
+                            referenced.write("." + elt)
+                        else :
+                            raise AssertionError("type of %s not int index or string field name" % repr(elt))
+                        #end if
                     #end for
+                else :
+                    referenced.write("()")
                 #end if
+            #end for
+        else :
+            referenced.write(" - no refs to this block")
+        #end if
+        blend.logger.debug \
+          (
+                "* block[%d](%s)[%s]@%#x : %s[%d]%s"
+            %
+                (
+                    i,
+                    repr(block["code"]),
+                    len(block.get("rawdata", "")),
+                    block["oldaddr"],
+                    blendfile.type_name(block["type"]),
+                    block["dna_count"],
+                    referenced.getvalue(),
+                )
+          )
+        if type(block["data"]) in (tuple, list) :
+            if blendfile.type_name(block["type"]) == "char" :
+                blend.logger.debug \
+                  (
+                        " => %s"
+                    %
+                        repr(b"".join(item for item in block["data"]))
+                  )
             else :
-                log.write(" => ")
-                log.write(repr(block["data"]))
-                log.write("\n")
+                for i, item in enumerate(block["data"]) :
+                    blend.logger.debug \
+                      (
+                            "[%d] => %s"
+                        %
+                            (i, dict_repr(item))
+                      )
+                #end for
             #end if
         else :
-            log.write("block[%d] undecoded\n" % i)
+            blend.logger.debug(" => %s" % repr(block["data"]))
         #end if
-    #end for
-#end if
+    else :
+        blend.logger.debug("block[%d] undecoded" % i)
+    #end if
+#end for
 if len(args) > 1 :
     remap = {}
       # try fiddling with address fields
