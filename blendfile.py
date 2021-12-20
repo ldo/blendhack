@@ -1270,6 +1270,50 @@ class Blenddata :
             )
     #end construct_block
 
+    def decode_untyped_blocks(self) :
+        "tries to determine types of undecoded blocks by expected types of pointers to them."
+
+        encode_ref = self.__class__.default_encode_ref # good enough
+        scanned = set() # blocks that have already been scanned
+
+        def decode_block_action(referrer, referrer_type, referrer_type_name, selector, block) :
+            if not block["decoded"] :
+                assert referrer != None and referrer_type != None and referrer_type_name != None and selector != None, \
+                    "undecoded top-level block!?"
+                block_type = None
+                if type(referrer_type) == FixedArrayType :
+                    block_type = referrer_type.EltType
+                    referrer_type_name = "*" + referrer_type_name
+                elif is_struct_type(referrer_type) :
+                    block_type = selector["type"]
+                #end if
+                assert type(block_type) == PointerType, "cannot determine referrer-selector type"
+                block_type = block_type.EltType
+                type_size = self.type_size(block_type)
+                if type_size == 0 : # type is void
+                    block_type = make_primitive_type("uchar")
+                    type_size = 1
+                #end if
+                dna_count = len(block["rawdata"]) // self.type_size(block_type)
+                self.logger.info \
+                  (
+                        "decoding untyped block[%d] as %s[%d]"
+                    %
+                        (block["index"], referrer_type_name, dna_count)
+                  )
+                block["override_type"] = block_type
+                self.decode_block(block, block_type, dna_count = dna_count)
+                self.scan_block(referrer, referrer_type, referrer_type_name, selector, block, decode_block_action, encode_ref, scanned)
+                  # in case it points to further undecoded blocks
+            #end if
+            return \
+                True
+        #end decode_block_action
+
+    #begin decode_untyped_blocks
+        self.scan_block(None, None, None, None, self.global_block, decode_block_action, encode_ref, scanned)
+    #end decode_untyped_blocks
+
     def dump_counts(self) :
         # debug--dumps some stats about block types.
         block_codes = {}
@@ -1335,53 +1379,8 @@ class Blenddata :
         #end for
     #end dump_counts
 
-    def load(self, filename, keep_rawdata = False, count_refs = False) :
+    def load(self, filename, decode_untyped = True, keep_rawdata = False, count_refs = False) :
         "loads the contents of the specified .blend file."
-
-        encode_ref = self.__class__.default_encode_ref # good enough
-        scanned = set() # blocks that have already been scanned
-
-        def decode_untyped_blocks() :
-          # tries to determine types of undecoded blocks by expected types of
-          # pointers to them
-
-            def decode_block_action(referrer, referrer_type, referrer_type_name, selector, block) :
-                if not block["decoded"] :
-                    assert referrer != None and referrer_type != None and referrer_type_name != None and selector != None, \
-                        "undecoded top-level block!?"
-                    block_type = None
-                    if type(referrer_type) == FixedArrayType :
-                        block_type = referrer_type.EltType
-                        referrer_type_name = "*" + referrer_type_name
-                    elif is_struct_type(referrer_type) :
-                        block_type = selector["type"]
-                    #end if
-                    assert type(block_type) == PointerType, "cannot determine referrer-selector type"
-                    block_type = block_type.EltType
-                    type_size = self.type_size(block_type)
-                    if type_size == 0 : # type is void
-                        block_type = make_primitive_type("uchar")
-                        type_size = 1
-                    #end if
-                    dna_count = len(block["rawdata"]) // self.type_size(block_type)
-                    self.logger.info \
-                      (
-                            "decoding untyped block[%d] as %s[%d]"
-                        %
-                            (block["index"], referrer_type_name, dna_count)
-                      )
-                    block["override_type"] = block_type
-                    self.decode_block(block, block_type, dna_count = dna_count)
-                    self.scan_block(referrer, referrer_type, referrer_type_name, selector, block, decode_block_action, encode_ref, scanned)
-                      # in case it points to further undecoded blocks
-                #end if
-                return \
-                    True
-            #end decode_block_action
-
-        #begin decode_untyped_blocks
-            self.scan_block(None, None, None, None, self.global_block, decode_block_action, encode_ref, scanned)
-        #end decode_untyped_blocks
 
     #begin load
         fd = open(filename, "rb")
@@ -1564,7 +1563,9 @@ class Blenddata :
                 del block["rawdata"]
             #end if
         #end for
-        decode_untyped_blocks()
+        if decode_untyped :
+            self.decode_untyped_blocks()
+        #end if
         self.dump_counts() # debug
         return \
             self

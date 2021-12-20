@@ -60,7 +60,7 @@ opts, args = getopt.getopt \
   (
     sys.argv[1:],
     "",
-    ("bits=", "compression=", "endian=", "loglevel=", "raw", "remap", "save-oldaddrs"),
+    ("bits=", "compression=", "decode-untyped=", "endian=", "loglevel=", "raw", "remap", "save-oldaddrs"),
   )
 if len(args) not in (1, 2) :
     raise getopt.GetoptError("usage: %s blendfile [outfile]" % sys.argv[0])
@@ -69,6 +69,7 @@ bit64 = None
 big_endian = None
 compression = None
 debug = False
+decode_untyped = True
 use_rawdata = False
 do_remap = False
 save_oldaddrs = False
@@ -83,6 +84,8 @@ for keyword, value in opts :
         else :
             raise getopt.GetoptError("unrecognized compression format %s" % value)
         #end if
+    elif keyword == "--decode-untyped" :
+        decode_untyped = value[:1].lower() in ("y", "t", "1")
     elif keyword == "--endian" :
         big_endian = {"big" : True, "little" : False}[value.lower()]
     elif keyword == "--loglevel" :
@@ -103,7 +106,7 @@ for keyword, value in opts :
         save_oldaddrs = True
     #end if
 #end for
-blend = blendfile.Blenddata(loglevel = loglevel).load(args[0], keep_rawdata = use_rawdata, count_refs = True)
+blend = blendfile.Blenddata(loglevel = loglevel).load(args[0], decode_untyped = decode_untyped, keep_rawdata = use_rawdata, count_refs = True)
 for i, block in enumerate(blend.blocks) :
     if block["decoded"] :
         referenced = io.StringIO()
