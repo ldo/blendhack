@@ -422,6 +422,7 @@ if zstandard != None :
         def __init__(self, fileobj, writing) :
             self.fileobj = fileobj
             if writing :
+                raise RuntimeError("TODO: does not correctly create format that Blender can read!")
                 comp = zstandard.ZstdCompressor()
                 wrap = comp.stream_writer(fileobj, closefd = True)
                 self.wrap = wrap
