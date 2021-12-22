@@ -107,9 +107,9 @@ import struct
 import logging
 import gzip
 try :
-    import zstandard # get from <https://github.com/indygreg/python-zstandard>
+    import zstd # get from <https://github.com/sergey-dryabzhinsky/python-zstd>
 except ImportError :
-    zstandard = None
+    zstd = None
 #end try
 
 #+
@@ -361,6 +361,16 @@ block_code_order = \
 blender_sig = b"BLENDER"
   # (decompressed) file must begin with this
 
+class ZSTD :
+    "various magic strings associated with the Zstandard compression format."
+    COMPR_FRAME_SIG = b"\x28\xB5\x2F\xFD"
+    SKIPPABLE_FRAME_SIG = b"\x5E\x2A\x4D\x18"
+      # seek-table spec:
+      # <https://github.com/facebook/zstd/blob/master/contrib/seekable_format/zstd_seekable_compression_format.md>
+    SEEK_MAGIC = b"\xb1\xea\x92\x8f"
+      # comes at end of seek table, so it can be found searching backwards
+#end ZSTD
+
 class UncompressedWrapper :
 
     def __init__(self, fileobj, writing) :
@@ -415,31 +425,132 @@ class GzipWrapper :
 
 #end GzipWrapper
 
-if zstandard != None :
+if zstd != None :
 
     class ZStdWrapper :
 
         def __init__(self, fileobj, writing) :
             self.fileobj = fileobj
             if writing :
-                raise RuntimeError("TODO: does not correctly create format that Blender can read!")
-                comp = zstandard.ZstdCompressor()
-                wrap = comp.stream_writer(fileobj, closefd = True)
-                self.wrap = wrap
                 self.read = None
                 self.tell = None
-                self.write = wrap.write
-                self.flush = wrap.flush
+                buf = b""
+                maxbuf = 32768
+                # Seek table is required for compatibility with Blender 3.0, to
+                # avoid “unsupported file format” error.
+                # It appears this requirement is considered a bug <https://developer.blender.org/T93858>
+                # and will be relaxed in later versions. But I create it anyway.
+                seek_table = []
+
+                def write_compressed(data) :
+                    # writes out a compressed frame, and records
+                    # a seek-table entry for it.
+                    compressed = zstd.compress(data)
+                    seek_table.append((len(compressed), len(data)))
+                    fileobj.write(compressed)
+                #end write_compressed
+
+                def write(data) :
+                    nonlocal buf
+                    buf += data
+                    while len(buf) >= maxbuf :
+                        write_compressed(buf[:maxbuf])
+                        buf = buf[maxbuf:]
+                    #end while
+                #end write
+
+                def flush() :
+                    nonlocal buf
+                    if len(buf) != 0 :
+                        write_compressed(buf)
+                        buf = b""
+                    #end if
+                    fileobj.flush()
+                #end flush
+
+                def close() :
+                    self.flush()
+                    fileobj.write(ZSTD.SKIPPABLE_FRAME_SIG)
+                    fileobj.write(struct.pack("<L", len(seek_table) * 8 + 9))
+                    for clen, dlen in seek_table :
+                        fileobj.write(struct.pack("<LL", clen, dlen))
+                    #end for
+                    fileobj.write(struct.pack("<L", len(seek_table)))
+                    fileobj.write(b"\x00") # no checksums (bit 7)
+                    fileobj.write(ZSTD.SEEK_MAGIC)
+                    fileobj.close()
+                    self.fileobj = None
+                #end close
+
+                self.write = write
+                self.flush = flush
+                self.close = close
             else :
-                decomp = zstandard.ZstdDecompressor()
-                wrap = decomp.stream_reader(fileobj, closefd = True)
-                self.wrap = wrap
-                self.read = wrap.read
-                self.tell = wrap.tell
+                cbuf = b""
+                dbuf = b""
+                doffset = 0
+                eof = False
+
+                def read(nrbytes) :
+                    nonlocal cbuf, dbuf, doffset, eof
+                    result = b""
+                    while True :
+                        if len(dbuf) >= nrbytes :
+                            doffset += nrbytes
+                            result += dbuf[:nrbytes]
+                            dbuf = dbuf[nrbytes:]
+                            break
+                        #end if
+                        if len(dbuf) != 0 :
+                            doffset += len(dbuf)
+                            result += dbuf
+                            dbuf = b""
+                        #end if
+                        if len(cbuf) == 0 and eof :
+                            break
+                        if (
+                                not eof
+                            and
+                                (
+                                    len(cbuf) < len(COMPRESSION.ZSTD.sig)
+                                or
+                                    cbuf.find(COMPRESSION.ZSTD.sig, len(COMPRESSION.ZSTD.sig)) < 0
+                                )
+                        ) :
+                            cmore = fileobj.read(32768)
+                            if len(cmore) != 0 :
+                                cbuf += cmore
+                            else :
+                                eof = True
+                            #end if
+                        #end if
+                        assert cbuf.startswith(COMPRESSION.ZSTD.sig)
+                        frame_end = cbuf.find(COMPRESSION.ZSTD.sig, len(COMPRESSION.ZSTD.sig))
+                        if eof and frame_end < 0 :
+                            frame_end = len(cbuf)
+                        #end if
+                        if frame_end >= 0 :
+                            dbuf += zstd.decompress(cbuf[:frame_end])
+                            cbuf = cbuf[frame_end:]
+                        #end if
+                    #end while
+                    return result
+                #end read
+
+                def tell() :
+                    return doffset
+                #end tell
+
+                def close() :
+                    fileobj.close()
+                #end close
+
+                self.read = read
+                self.tell = tell
                 self.write = None
                 self.flush = None
+                self.close = close
             #end if
-            self.close = wrap.close
         #end def
 
     #end ZStdWrapper
@@ -452,7 +563,7 @@ class COMPRESSION(enum.Enum) :
     "compression formats for .blend files."
     NONE = ("none", None, UncompressedWrapper)
     GZIP = ("gzip", b"\x1F\x8B", GzipWrapper)
-    ZSTD = ("zstd", b"\x28\xB5\x2F\xFD", ZStdWrapper) # Blender 3.0 and later
+    ZSTD = ("zstd", ZSTD.COMPR_FRAME_SIG, ZStdWrapper) # Blender 3.0 and later
 
     @property
     def name(self) :
@@ -479,7 +590,8 @@ class COMPRESSION(enum.Enum) :
 class Blenddata :
     "Call the load method on an instance of this to parse a .blend file, passing it" \
     " the pathname of the file to read and parse. The returned object will contain the" \
-    " parsed contents of the file."
+    " parsed contents of the file. You can also call the save method to save the" \
+    " contents to a .blend file."
 
     # Instance variables set up by load and decode_sdna routines:
     #     blocks --
