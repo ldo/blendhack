@@ -436,11 +436,13 @@ if zstd != None :
                 self.tell = None
                 buf = b""
                 maxbuf = 32768
-                # Seek table is required for compatibility with Blender 3.0, to
-                # avoid “unsupported file format” error.
-                # It appears this requirement is considered a bug <https://developer.blender.org/T93858>
-                # and will be relaxed in later versions. But I create it anyway.
+                  # Some frame size roughly similar to what I see in files
+                  # created by Blender
                 seek_table = []
+                  # Seek table is required for compatibility with Blender 3.0, to
+                  # avoid “unsupported file format” error.
+                  # It appears this requirement is considered a bug <https://developer.blender.org/T93858>
+                  # and will be relaxed in later versions. But I create it anyway.
 
                 def write_compressed(data) :
                     # writes out a compressed frame, and records
@@ -480,19 +482,19 @@ if zstd != None :
                     fileobj.write(ZSTD.SEEK_MAGIC)
                     fileobj.close()
                     self.fileobj = None
+                    self.write = self.flush = self.close = None # break any circularities
                 #end close
 
                 self.write = write
                 self.flush = flush
                 self.close = close
             else :
-                cbuf = b""
                 dbuf = b""
                 doffset = 0
                 eof = False
 
                 def read(nrbytes) :
-                    nonlocal cbuf, dbuf, doffset, eof
+                    nonlocal dbuf, doffset, eof
                     result = b""
                     while True :
                         if len(dbuf) >= nrbytes :
@@ -501,37 +503,76 @@ if zstd != None :
                             dbuf = dbuf[nrbytes:]
                             break
                         #end if
-                        if len(dbuf) != 0 :
-                            doffset += len(dbuf)
-                            result += dbuf
-                            dbuf = b""
-                        #end if
-                        if len(cbuf) == 0 and eof :
-                            break
-                        if (
-                                not eof
-                            and
-                                (
-                                    len(cbuf) < len(COMPRESSION.ZSTD.sig)
-                                or
-                                    cbuf.find(COMPRESSION.ZSTD.sig, len(COMPRESSION.ZSTD.sig)) < 0
-                                )
-                        ) :
-                            cmore = fileobj.read(32768)
-                            if len(cmore) != 0 :
-                                cbuf += cmore
-                            else :
-                                eof = True
+                        if eof :
+                            if len(dbuf) != 0 :
+                                doffset += len(dbuf)
+                                result += dbuf
+                                dbuf = b""
                             #end if
+                            break
                         #end if
-                        assert cbuf.startswith(COMPRESSION.ZSTD.sig)
-                        frame_end = cbuf.find(COMPRESSION.ZSTD.sig, len(COMPRESSION.ZSTD.sig))
-                        if eof and frame_end < 0 :
-                            frame_end = len(cbuf)
+                        coffset = fileobj.tell()
+                        sig = fileobj.read(4)
+                        if len(sig) == 0 :
+                            eof = True
+                            break
                         #end if
-                        if frame_end >= 0 :
-                            dbuf += zstd.decompress(cbuf[:frame_end])
-                            cbuf = cbuf[frame_end:]
+                        if sig == ZSTD.COMPR_FRAME_SIG :
+                            # collect the complete compressed frame. This is slightly
+                            # tricky, since I have to parse bits of it to work out the
+                            # total length.
+                            cbuf = sig
+                            header_desc = fileobj.read(1)
+                            cbuf += header_desc
+                            header_desc = header_desc[0]
+                            fcs_field_size = 1 << (header_desc >> 6 & 3)
+                            single_segment = header_desc >> 5 & 1 != 0
+                            if fcs_field_size == 1 and not single_segment :
+                                fcs_field_size = 0
+                            #end if
+                            has_content_checksum = header_desc >> 2 & 1 != 0
+                            dictionary_id_size = header_desc & 3
+                            if dictionary_id_size != 0 :
+                                dictionary_id_size = 1 << dictionary_id_size - 1
+                            #end if
+                            if not single_segment :
+                                cbuf += fileobj.read(1) # window_desc
+                            #end if
+                            if dictionary_id_size != 0 :
+                                cbuf += fileobj.read(dictionary_id_size) # dictionary ID
+                            #end if
+                            if fcs_field_size != 0 :
+                                cbuf += fileobj.read(fcs_field_size) # frame size field
+                            #end if
+                            while True :
+                                block_header = fileobj.read(3)
+                                cbuf += block_header
+                                block_header = block_header[0] | block_header[1] << 8 | block_header[2] << 16
+                                last_block = block_header & 1 != 0
+                                block_type = block_header >> 1 & 3
+                                block_size = block_header >> 3
+                                content_size = \
+                                    {
+                                        0 : block_size, # literal block
+                                        1 : 1, # RLE block
+                                        2 : block_size, # compressed block
+                                    }[block_type]
+                                cbuf += fileobj.read(content_size)
+                                if last_block :
+                                    break
+                            #end while
+                            if has_content_checksum :
+                                cbuf += fileobj.read(4)
+                            #end if
+                            dbuf += zstd.decompress(cbuf)
+                        elif sig == ZSTD.SKIPPABLE_FRAME_SIG :
+                            frame_len, = struct.unpack("<L", fileobj.read(4))
+                            fileobj.seek(coffset + frame_len + 8)
+                        else :
+                            raise RuntimeError \
+                              (
+                                "unrecognizable signature %s at offset %#0.8x" % (repr(sig), coffset)
+                              )
                         #end if
                     #end while
                     return result
@@ -543,6 +584,7 @@ if zstd != None :
 
                 def close() :
                     fileobj.close()
+                    self.read = self.tell = self.close = None # break any circularities
                 #end close
 
                 self.read = read
@@ -551,7 +593,7 @@ if zstd != None :
                 self.flush = None
                 self.close = close
             #end if
-        #end def
+        #end __init__
 
     #end ZStdWrapper
 
